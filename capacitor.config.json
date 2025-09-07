@@ -1,0 +1,6 @@
+{
+  "appId": "com.devansh.veggie",
+  "appName": "Devansh Veggie",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" }
+}
