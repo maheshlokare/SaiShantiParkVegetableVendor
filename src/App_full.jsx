@@ -1,16 +1,26 @@
-// --- FULL CODE pasted from your latest canvas document (identical to previous message) ---
-// To keep the notebook concise, the actual content is exactly the same as you posted.
-// I’m embedding it here 1:1:
 import React, { useMemo, useState, useEffect, useRef } from "react";
 
-// PROTOTYPE: Devansh Overseas LLP — Customer App + Vendor Kiosk (MVP v3.3)
-// New features per request:
-// - Cart editing: remove line items + +/- quantity (0.1 kg steps) directly in Checkout.
-// - Product categories: add/select category on create; inline edit category on product cards; customer can filter by category chips.
+/* =========================
+   Devansh Overseas LLP App (Customer + Vendor Kiosk)
+   MVP – final handoff
+   - Kiosk hidden behind long-press (10s) on brand → PIN login (default 1234)
+   - Big alarm, vibration, and TTS on new orders
+   - English / Marathi / Hindi
+   - Societies: Sai Shanti Park, Aeroplise Phase 1, Aeropoise Phase 2
+   - Customer: multi-add with 0.1 kg steps, cart edit/remove, COD, today/tomorrow
+   - Vendor Kiosk: orders + status, archive, products mgmt, discounts, dashboard
+   - Persistence: products, discounts, kiosk orders in localStorage
+========================= */
 
 const BRAND_RED = "#D32F2F";
 const BRAND_YELLOW = "#FFC107";
-const STATUS_COLORS = { new: "#ef4444", accepted: "#16a34a", preparing: "#f59e0b", ready: "#2563eb", delivered: "#111827" };
+const STATUS_COLORS = {
+  new: "#ef4444",
+  accepted: "#16a34a",
+  preparing: "#f59e0b",
+  ready: "#2563eb",
+  delivered: "#111827",
+};
 
 const CATEGORIES = ["Roots", "Leafy", "Salad/Gourd", "Other"];
 
@@ -90,6 +100,15 @@ const tdict = {
     filter: "Filter",
     all: "All",
     remove: "Remove",
+    // vendor auth
+    vendorLogin: "Vendor Login",
+    enterPin: "Enter PIN",
+    pin: "PIN",
+    login: "Login",
+    wrongPin: "Wrong PIN",
+    changePin: "Change PIN",
+    savePin: "Save PIN",
+    logout: "Logout",
   },
   mr: {
     appTitle: "Devansh Overseas LLP",
@@ -148,7 +167,7 @@ const tdict = {
     simulate: "नवीन ऑर्डर दाखवा",
     next: "पुढे",
     noOrders: "अजून ऑर्डर्स नाहीत.",
-    addNewProduct: "नवीन प्रॉडक्ट جوडा",
+    addNewProduct: "नवीन प्रॉडक्ट जोडा",
     existingProducts: "अस्तित्वातील प्रॉडक्ट्स",
     delete: "काढून टाका",
     confirmDelete: "हा प्रॉडक्ट हटवायचा? ही क्रिया परत आणता येणार नाही.",
@@ -160,6 +179,14 @@ const tdict = {
     filter: "फिल्टर",
     all: "सर्व",
     remove: "काढा",
+    vendorLogin: "विक्रेता लॉगिन",
+    enterPin: "PIN टाका",
+    pin: "PIN",
+    login: "लॉगिन",
+    wrongPin: "चुकीचा PIN",
+    changePin: "PIN बदला",
+    savePin: "PIN सेव्ह करा",
+    logout: "लॉगआऊट",
   },
   hi: {
     appTitle: "Devansh Overseas LLP",
@@ -193,7 +220,7 @@ const tdict = {
     tabTomorrow: "कल",
     tabArchived: "आर्काइव्ड",
     newOrder: "नया ऑर्डर",
-    orderFrom: "ऑर्डर - फ्लॅट",
+    orderFrom: "ऑर्डर - फ्लैट",
     accept: "स्वीकारें",
     preparing: "तैयार हो रहा है",
     ready: "तैयार",
@@ -230,6 +257,14 @@ const tdict = {
     filter: "फ़िल्टर",
     all: "सभी",
     remove: "हटाएँ",
+    vendorLogin: "वेंडर लॉगिन",
+    enterPin: "PIN दर्ज करें",
+    pin: "PIN",
+    login: "लॉगिन",
+    wrongPin: "गलत PIN",
+    changePin: "PIN बदलें",
+    savePin: "PIN सेव करें",
+    logout: "लॉगआउट",
   },
 };
 
@@ -259,106 +294,252 @@ function useTranslate(lang) {
 }
 
 function ProductThumb({ img }) {
-  if (typeof img === "string" && (img.startsWith("data:") || img.startsWith("http"))) return <img src={img} alt="" className="w-10 h-10 rounded object-cover" />;
+  if (typeof img === "string" && (img.startsWith("data:") || img.startsWith("http"))) {
+    return <img src={img} alt="" className="w-10 h-10 rounded object-cover" />;
+  }
   return <div className="text-3xl">{img || "🛒"}</div>;
 }
 
+/* -------- Header (Kiosk hidden, long-press 10s on brand) -------- */
 function Header({ lang, setLang, onNavigate, active, title, onGoOrders }) {
-  const { tt } = useTranslate(lang);
+  const BRAND_NAME = "Devansh Overseas LLP";
+  useTranslate(lang); // just to force re-render on lang change for labels
+
+  const holdRef = useRef(null);
+  const startHold = (e) => {
+    e?.preventDefault?.();
+    clearTimeout(holdRef.current);
+    holdRef.current = setTimeout(() => {
+      onNavigate && onNavigate("kiosk");
+    }, 10000); // 10 seconds
+  };
+  const endHold = () => clearTimeout(holdRef.current);
+
   return (
-    <div className="w-full flex items-center justify-between px-4 py-3 sticky top-0 z-20" style={{ background: BRAND_RED, color: "white" }}>
-      <div className="flex items-center gap-2">
-        <div className="font-extrabold text-xl">Devansh Overseas LLP</div>
-        <div className="opacity-90">| {title || tt.appTitle}</div>
+    <div
+      className="w-full flex items-center justify-between px-4 py-3 sticky top-0 z-20 flex-wrap"
+      style={{ background: BRAND_RED, color: "white" }}
+    >
+      {/* Brand — long-press here to open kiosk login */}
+      <div
+        className="flex items-center gap-2 select-none"
+        onMouseDown={startHold}
+        onMouseUp={endHold}
+        onMouseLeave={endHold}
+        onTouchStart={startHold}
+        onTouchEnd={endHold}
+      >
+        <div className="font-extrabold text-xl leading-tight truncate max-w-[70vw]">
+          {BRAND_NAME}
+        </div>
+        {title && title !== BRAND_NAME && (
+          <div className="opacity-90 hidden sm:block">| {title}</div>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <select className="bg-white text-black rounded px-2 py-1" value={lang} onChange={(e)=>setLang(e.target.value)}>
-          {langs.map(l=> <option key={l.code} value={l.code}>{l.label}</option>)}
+
+      {/* Controls */}
+      <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-wrap">
+        <select
+          className="bg-white text-black rounded px-2 py-1"
+          value={lang}
+          onChange={(e) => setLang(e.target.value)}
+        >
+          {langs.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
         </select>
-        <button onClick={()=>onNavigate("customer")} className={`px-3 py-1 rounded ${active==="customer"?"bg-yellow-400 text-black":"bg-white text-black"}`}>Customer</button>
-        <button onClick={()=>onNavigate("kiosk")} className={`px-3 py-1 rounded ${active==="kiosk"?"bg-yellow-400 text-black":"bg-white text-black"}`}>Kiosk</button>
-        {active==="customer" && (
-          <button onClick={onGoOrders} className="px-3 py-1 rounded bg-white text-black">{tdict[lang].gotoOrders}</button>
+
+        <button
+          onClick={() => onNavigate && onNavigate("customer")}
+          className={`px-3 py-1 rounded ${
+            active === "customer" ? "bg-yellow-400 text-black" : "bg-white text-black"
+          }`}
+        >
+          Customer
+        </button>
+
+        {/* My Orders hidden on tiny screens to avoid overflow */}
+        {active === "customer" && (
+          <button
+            onClick={onGoOrders}
+            className="px-3 py-1 rounded bg-white text-black hidden sm:block"
+          >
+            {tdict[lang].gotoOrders}
+          </button>
         )}
       </div>
     </div>
   );
 }
 
-function LanguageFirst({ lang, setLang, onNext }){
+/* -------- Customer: language & society steps -------- */
+function LanguageFirst({ lang, setLang, onNext }) {
   const { tt } = useTranslate(lang);
   return (
     <div className="flex flex-col items-center justify-center p-6 h-[calc(100vh-64px)] bg-yellow-50">
-      <div className="text-3xl font-extrabold" style={{ color: BRAND_RED }}>{tt.selectLanguage}</div>
-      <select className="mt-4 border rounded p-2 text-lg" value={lang} onChange={(e)=>setLang(e.target.value)}>
-        {langs.map(l=> <option key={l.code} value={l.code}>{l.label}</option>)}
+      <div className="text-3xl font-extrabold" style={{ color: BRAND_RED }}>
+        {tt.selectLanguage}
+      </div>
+      <select
+        className="mt-4 border rounded p-2 text-lg"
+        value={lang}
+        onChange={(e) => setLang(e.target.value)}
+      >
+        {langs.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.label}
+          </option>
+        ))}
       </select>
-      <button onClick={onNext} className="mt-6 px-5 py-3 rounded-2xl shadow font-semibold" style={{ background: BRAND_YELLOW, color: "#111" }}>{tt.next}</button>
+      <button
+        onClick={onNext}
+        className="mt-6 px-5 py-3 rounded-2xl shadow font-semibold"
+        style={{ background: BRAND_YELLOW, color: "#111" }}
+      >
+        {tt.next}
+      </button>
     </div>
   );
 }
 
-function SocietyApartment({ lang, onDone }){
+function SocietyApartment({ lang, onDone }) {
   const { tt } = useTranslate(lang);
-  const [society, setSociety] = useState("Green Meadows");
+  const SOCIETIES = ["Sai Shanti Park", "Aeroplise Phase 1", "Aeropoise Phase 2"];
+  const [society, setSociety] = useState(SOCIETIES[0]);
   const [apt, setApt] = useState("");
   const [name, setName] = useState("");
+
   return (
     <div className="p-4 max-w-md mx-auto">
       <label className="block text-sm mb-1">{tt.selectSociety}</label>
-      <select value={society} onChange={(e)=>setSociety(e.target.value)} className="w-full border rounded p-2 mb-4">
-        <option>Green Meadows</option>
-        <option>Sunrise Towers</option>
-        <option>Lake View</option>
+      <select
+        value={society}
+        onChange={(e) => setSociety(e.target.value)}
+        className="w-full border rounded p-2 mb-4"
+      >
+        {SOCIETIES.map((s) => (
+          <option key={s}>{s}</option>
+        ))}
       </select>
+
       <label className="block text-sm mb-1">{tt.apartmentNumber}</label>
-      <input type="text" value={apt} onChange={(e)=>setApt(e.target.value)} placeholder="3B" className="w-full border rounded p-2 mb-3" />
+      <input
+        type="text"
+        value={apt}
+        onChange={(e) => setApt(e.target.value)}
+        placeholder="3B"
+        className="w-full border rounded p-2 mb-3"
+      />
+
       <label className="block text-sm mb-1">{tt.customerName}</label>
-      <input type="text" value={name} onChange={(e)=>setName(e.target.value)} placeholder="Ramesh / Suresh" className="w-full border rounded p-2" />
-      <button onClick={()=> onDone({society, apt: apt?.trim() || "3B", name: name?.trim() || ""})} className="mt-4 w-full py-3 rounded-2xl font-semibold" style={{ background: BRAND_RED, color: "white" }}>{tt.saveAndContinue}</button>
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Ramesh / Suresh"
+        className="w-full border rounded p-2"
+      />
+
+      <button
+        onClick={() =>
+          onDone({ society, apt: apt?.trim() || "3B", name: name?.trim() || "" })
+        }
+        className="mt-4 w-full py-3 rounded-2xl font-semibold"
+        style={{ background: BRAND_RED, color: "white" }}
+      >
+        {tt.saveAndContinue}
+      </button>
     </div>
   );
 }
 
-function ProductListMultiAdd({ lang, products, setSelections, selections, onGoCart, onGoOrders }){
+/* -------- Products: multi-add with 0.1 kg steps -------- */
+function ProductListMultiAdd({
+  lang,
+  products,
+  setSelections,
+  selections,
+  onGoCart,
+  onGoOrders,
+}) {
   const { tt, name } = useTranslate(lang);
   const [catFilter, setCatFilter] = useState("All");
-  const qtyOptions = Array.from({length: 50}).map((_,i)=> ((i+1)/10).toFixed(1));
-  const cats = Array.from(new Set(["All", ...products.map(p=> p.category || "Other") ]));
-  const visible = products.filter(p=> p.available).filter(p=> catFilter==="All"?true:(p.category===catFilter));
+  const qtyOptions = Array.from({ length: 50 }).map((_, i) =>
+    ((i + 1) / 10).toFixed(1)
+  ); // 0.1..5.0
+  const cats = Array.from(new Set(["All", ...products.map((p) => p.category || "Other")]));
+  const visible = products
+    .filter((p) => p.available)
+    .filter((p) => (catFilter === "All" ? true : p.category === catFilter));
 
   return (
     <div className="p-4 max-w-md mx-auto">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-xl font-bold">{tt.products}</h2>
         <div className="flex gap-2">
-          <button onClick={onGoOrders} className="underline text-sm">{tt.gotoOrders}</button>
-          <button onClick={onGoCart} className="underline text-sm">{tt.gotoCart}</button>
+          <button onClick={onGoOrders} className="underline text-sm">
+            {tt.gotoOrders}
+          </button>
+          <button onClick={onGoCart} className="underline text-sm">
+            {tt.gotoCart}
+          </button>
         </div>
       </div>
 
       {/* Category chips */}
       <div className="mb-3 flex flex-wrap gap-2">
-        {cats.map(c=> (
-          <button key={c} onClick={()=>setCatFilter(c)} className={`px-3 py-1 rounded-full text-sm ${catFilter===c?"bg-black text-white":"bg-gray-200"}`}>{c}</button>
+        {cats.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCatFilter(c)}
+            className={`px-3 py-1 rounded-full text-sm ${
+              catFilter === c ? "bg-black text-white" : "bg-gray-200"
+            }`}
+          >
+            {c}
+          </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-3">
-        {visible.map(v => (
-          <div key={v.id} className="border rounded-xl p-3 flex items-center justify-between bg-white">
+        {visible.map((v) => (
+          <div
+            key={v.id}
+            className="border rounded-xl p-3 flex items-center justify-between bg-white"
+          >
             <div className="flex items-center gap-3">
               <ProductThumb img={v.img} />
               <div>
                 <div className="font-semibold">{name(v)}</div>
-                <div className="text-xs text-gray-500">{tt.category}: {v.category||'Other'}</div>
-                <div className="text-sm text-gray-600">₹{v.price}/{tdict[lang].kg} {v.discountPct? <span className="ml-1 text-green-700 font-semibold">(-{v.discountPct}%)</span>: null}</div>
+                <div className="text-xs text-gray-500">
+                  {tt.category}: {v.category || "Other"}
+                </div>
+                <div className="text-sm text-gray-600">
+                  ₹{v.price}/{tdict[lang].kg}{" "}
+                  {v.discountPct ? (
+                    <span className="ml-1 text-green-700 font-semibold">
+                      (-{v.discountPct}%)
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <select value={selections[v.id]||""} onChange={(e)=> setSelections(prev=> ({...prev, [v.id]: e.target.value}))} className="border rounded px-2 py-1">
+              <select
+                value={selections[v.id] || ""}
+                onChange={(e) =>
+                  setSelections((prev) => ({ ...prev, [v.id]: e.target.value }))
+                }
+                className="border rounded px-2 py-1"
+              >
                 <option value="">{tt.qty}</option>
-                {qtyOptions.map(q=> <option key={q} value={q}>{q}</option>)}
+                {qtyOptions.map((q) => (
+                  <option key={q} value={q}>
+                    {q}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -368,177 +549,493 @@ function ProductListMultiAdd({ lang, products, setSelections, selections, onGoCa
   );
 }
 
-function calcItemFinal(price, qty, productDiscountPct=0, customerDiscountPct=0){
-  const afterProduct = price * (1 - (productDiscountPct||0)/100);
-  const afterCustomer = afterProduct * (1 - (customerDiscountPct||0)/100);
-  return { line: afterCustomer * qty, base: price * qty, saved: price * qty - afterCustomer * qty };
+function calcItemFinal(price, qty, productDiscountPct = 0, customerDiscountPct = 0) {
+  const afterProduct = price * (1 - (productDiscountPct || 0) / 100);
+  const afterCustomer = afterProduct * (1 - (customerDiscountPct || 0) / 100);
+  return {
+    line: afterCustomer * qty,
+    base: price * qty,
+    saved: price * qty - afterCustomer * qty,
+  };
 }
 
-function CartCheckout({ lang, cart, setCart, onPlace, onBack, products, customerDiscounts, profile }){
+/* -------- Cart / Checkout -------- */
+function CartCheckout({
+  lang,
+  cart,
+  setCart,
+  onPlace,
+  onBack,
+  products,
+  customerDiscounts,
+  profile,
+}) {
   const { tt } = useTranslate(lang);
   const [delivery, setDelivery] = useState("today");
   const apt = profile?.apt?.trim();
-  const custEntry = apt ? (customerDiscounts[apt] || 0) : 0;
-  const custDiscPct = typeof custEntry === 'object' ? (custEntry.pct||0) : (custEntry||0);
-  const custName = typeof custEntry === 'object' ? (custEntry.name||"") : (profile?.name||"");
+  const custEntry = apt ? customerDiscounts[apt] || 0 : 0;
+  const custDiscPct = typeof custEntry === "object" ? custEntry.pct || 0 : custEntry || 0;
+  const custName = typeof custEntry === "object" ? custEntry.name || "" : profile?.name || "";
 
-  const lines = cart.map(c=>{
-    const prod = products.find(p=> p.id===c.id) || {};
-    const calc = calcItemFinal(prod.price||c.price, c.qty, prod.discountPct||0, custDiscPct);
-    return { ...c, price: prod.price||c.price, productDiscount: prod.discountPct||0, customerDiscount: custDiscPct, lineTotal: calc.line, saved: calc.saved };
+  const lines = cart.map((c) => {
+    const prod = products.find((p) => p.id === c.id) || {};
+    const calc = calcItemFinal(
+      prod.price || c.price,
+      c.qty,
+      prod.discountPct || 0,
+      custDiscPct
+    );
+    return {
+      ...c,
+      price: prod.price || c.price,
+      productDiscount: prod.discountPct || 0,
+      customerDiscount: custDiscPct,
+      lineTotal: calc.line,
+      saved: calc.saved,
+    };
   });
-  const total = lines.reduce((s, l)=> s + l.lineTotal, 0);
-  const savedTotal = lines.reduce((s,l)=> s + l.saved, 0);
+  const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+  const savedTotal = lines.reduce((s, l) => s + l.saved, 0);
 
-  const stepQty = (i, delta)=>{
-    setCart(prev=> prev.map((it, idx)=> idx===i? {...it, qty: Math.max(0.1, +(it.qty + delta).toFixed(1))}: it).filter(it=> it.qty>0));
+  const stepQty = (i, delta) => {
+    setCart((prev) =>
+      prev
+        .map((it, idx) =>
+          idx === i
+            ? { ...it, qty: Math.max(0.1, +(it.qty + delta).toFixed(1)) }
+            : it
+        )
+        .filter((it) => it.qty > 0)
+    );
   };
-  const removeLine = (i)=> setCart(prev=> prev.filter((_,idx)=> idx!==i));
+  const removeLine = (i) => setCart((prev) => prev.filter((_, idx) => idx !== i));
 
   return (
     <div className="p-4 max-w-md mx-auto">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-bold">{tt.checkout}</h2>
-        <button onClick={onBack} className="underline">← {tt.back}</button>
+        <button onClick={onBack} className="underline">
+          ← {tt.back}
+        </button>
       </div>
       <div className="space-y-2">
-        {lines.map((l, i)=> (
+        {lines.map((l, i) => (
           <div key={i} className="border rounded-xl p-3 bg-white">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold">{l.name}</div>
-                <div className="text-xs text-gray-500">₹{l.price.toFixed(2)}/{tdict[lang].kg}</div>
-                {(l.productDiscount||l.customerDiscount)? (
-                  <div className="text-xs text-green-700 mt-1">{tt.discount}: {l.productDiscount?`-${l.productDiscount}% `:""}{l.customerDiscount?`- ${l.customerDiscount}% ${custName?`(${custName})`: `(apt ${apt})`}`: ""}</div>
-                ): null}
+                <div className="text-xs text-gray-500">
+                  ₹{l.price.toFixed(2)}/{tdict[lang].kg}
+                </div>
+                {l.productDiscount || l.customerDiscount ? (
+                  <div className="text-xs text-green-700 mt-1">
+                    {tt.discount}:{" "}
+                    {l.productDiscount ? `-${l.productDiscount}% ` : ""}
+                    {l.customerDiscount
+                      ? `- ${l.customerDiscount}% ${
+                          custName ? `(${custName})` : `(apt ${apt})`
+                        }`
+                      : ""}
+                  </div>
+                ) : null}
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-2 justify-end">
-                  <button onClick={()=>stepQty(i,-0.1)} className="px-2 py-1 rounded bg-gray-200">-</button>
-                  <div className="min-w-[48px] text-center font-semibold">{l.qty.toFixed(1)} {tdict[lang].kg}</div>
-                  <button onClick={()=>stepQty(i, 0.1)} className="px-2 py-1 rounded bg-gray-200">+</button>
+                  <button
+                    onClick={() => stepQty(i, -0.1)}
+                    className="px-2 py-1 rounded bg-gray-200"
+                  >
+                    -
+                  </button>
+                  <div className="min-w-[48px] text-center font-semibold">
+                    {l.qty.toFixed(1)} {tdict[lang].kg}
+                  </div>
+                  <button
+                    onClick={() => stepQty(i, +0.1)}
+                    className="px-2 py-1 rounded bg-gray-200"
+                  >
+                    +
+                  </button>
                 </div>
                 <div className="mt-1 font-semibold">₹{l.lineTotal.toFixed(2)}</div>
-                <button onClick={()=>removeLine(i)} className="mt-1 text-xs underline text-red-700">{tt.remove}</button>
+                <button
+                  onClick={() => removeLine(i)}
+                  className="mt-1 text-xs underline text-red-700"
+                >
+                  {tt.remove}
+                </button>
               </div>
             </div>
           </div>
         ))}
       </div>
+
       <div className="mt-3 text-sm text-gray-600">{tt.codOnly}</div>
+
       <div className="mt-3">
         <div className="font-semibold mb-1">{tt.delivery}</div>
         <div className="flex gap-2">
-          <button onClick={()=>setDelivery("today")} className={`px-3 py-2 rounded-2xl ${delivery==="today"?"bg-green-600 text-white":"bg-gray-200"}`}>{tt.today}</button>
-          <button onClick={()=>setDelivery("tomorrow")} className={`px-3 py-2 rounded-2xl ${delivery==="tomorrow"?"bg-green-600 text-white":"bg-gray-200"}`}>{tt.tomorrow}</button>
+          <button
+            onClick={() => setDelivery("today")}
+            className={`px-3 py-2 rounded-2xl ${
+              delivery === "today" ? "bg-green-600 text-white" : "bg-gray-200"
+            }`}
+          >
+            {tt.today}
+          </button>
+          <button
+            onClick={() => setDelivery("tomorrow")}
+            className={`px-3 py-2 rounded-2xl ${
+              delivery === "tomorrow" ? "bg-green-600 text-white" : "bg-gray-200"
+            }`}
+          >
+            {tt.tomorrow}
+          </button>
         </div>
       </div>
+
       <div className="mt-4 flex items-center justify-between text-lg font-bold">
         <div>{tt.total}</div>
         <div>₹{total.toFixed(2)}</div>
       </div>
-      {savedTotal>0 && (
-        <div className="mt-1 text-right text-sm text-green-700">{tt.savings}: ₹{savedTotal.toFixed(2)}</div>
+      {savedTotal > 0 && (
+        <div className="mt-1 text-right text-sm text-green-700">
+          {tt.savings}: ₹{savedTotal.toFixed(2)}
+        </div>
       )}
-      <button onClick={()=> onPlace({delivery, totalCalculated: total, lines})} className="mt-4 w-full py-3 rounded-2xl font-semibold" style={{ background: BRAND_RED, color: "white" }}>{tt.placeOrder}</button>
+      <button
+        onClick={() => onPlace({ delivery, totalCalculated: total, lines })}
+        className="mt-4 w-full py-3 rounded-2xl font-semibold"
+        style={{ background: BRAND_RED, color: "white" }}
+      >
+        {tt.placeOrder}
+      </button>
     </div>
   );
 }
 
-function Confirmation({ lang, orderId, onDone }){
+function Confirmation({ lang, orderId, onDone }) {
   const { tt } = useTranslate(lang);
   return (
     <div className="flex flex-col items-center justify-center p-6 h-[calc(100vh-64px)] bg-green-50">
       <div className="text-6xl">✅</div>
       <div className="mt-2 text-2xl font-bold">{tt.orderConfirmed}</div>
-      <div className="mt-1">{tt.orderNumber}: <span className="font-mono">{orderId}</span></div>
-      <button onClick={onDone} className="mt-6 px-5 py-3 rounded-2xl shadow font-semibold" style={{ background: BRAND_YELLOW, color: "#111" }}>{tdict[lang].myOrders}</button>
+      <div className="mt-1">
+        {tt.orderNumber}: <span className="font-mono">{orderId}</span>
+      </div>
+      <button
+        onClick={onDone}
+        className="mt-6 px-5 py-3 rounded-2xl shadow font-semibold"
+        style={{ background: BRAND_YELLOW, color: "#111" }}
+      >
+        {tdict[lang].myOrders}
+      </button>
     </div>
   );
 }
 
-function StatusBadge({ status }){
+function StatusBadge({ status }) {
   const color = STATUS_COLORS[status] || "#6b7280";
-  return <span className="px-2 py-1 rounded-full text-white text-xs" style={{ background: color }}>{status}</span>;
+  return (
+    <span className="px-2 py-1 rounded-full text-white text-xs" style={{ background: color }}>
+      {status}
+    </span>
+  );
 }
 
-const orderStages = ["new","accepted","preparing","ready","delivered"];
+const orderStages = ["new", "accepted", "preparing", "ready", "delivered"];
 
-function speak(text, langCode){
+function speak(text, langCode) {
   if (!("speechSynthesis" in window)) return;
-  const u = new SpeechSynthesisUtterance(text); u.lang = langCode || "en-IN"; window.speechSynthesis.speak(u);
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = langCode || "en-IN";
+  window.speechSynthesis.speak(u);
 }
 
-function Kiosk({ lang, orders, setOrders, flash, setFlash, totals, lastNewOrder, onSimulate, view, setView, customerDiscounts }){
+// Loud alarm + vibration
+function playAlarm() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const beep = (start) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "square";
+      o.frequency.value = 880;
+      o.connect(g);
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.6, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+      o.start(start);
+      o.stop(start + 0.36);
+    };
+    const t0 = ctx.currentTime;
+    [0, 0.45, 0.9].forEach((off) => beep(t0 + off));
+  } catch {}
+  if (navigator?.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+}
+
+/* -------- Vendor Kiosk (orders panel only; other panels rendered outside) -------- */
+function Kiosk({
+  lang,
+  orders,
+  setOrders,
+  flash,
+  setFlash,
+  totals,
+  lastNewOrder,
+  onSimulate,
+  view,
+  setView,
+  customerDiscounts,
+  onChangePin,
+  onLogout,
+}) {
   const { tt } = useTranslate(lang);
   const prevNewId = useRef(null);
-  useEffect(()=>{
-    if (lastNewOrder && lastNewOrder.id !== prevNewId.current){
-      prevNewId.current = lastNewOrder.id; setFlash(true);
-      const langMeta = langs.find(l=> l.code===lang); speak(`${tt.newOrder}: ${tt.orderFrom} ${lastNewOrder.apt}`,(langMeta?.vcl));
-      const t = setTimeout(()=> setFlash(false), 1200); return ()=> clearTimeout(t);
+
+  useEffect(() => {
+    if (lastNewOrder && lastNewOrder.id !== prevNewId.current) {
+      prevNewId.current = lastNewOrder.id;
+      setFlash(true);
+      const langMeta = langs.find((l) => l.code === lang);
+      playAlarm();
+      speak(`${tt.newOrder}: ${tt.orderFrom} ${lastNewOrder.apt}`, langMeta?.vcl);
+      const t = setTimeout(() => setFlash(false), 1200);
+      return () => clearTimeout(t);
     }
-  },[lastNewOrder, lang, setFlash, tt]);
+  }, [lastNewOrder, lang, setFlash, tt]);
 
   const [tab, setTab] = useState("today");
   const [selected, setSelected] = useState(null);
-  const filtered = orders.filter(o=> o.when === (tab==="today"?"today": tab==="tomorrow"?"tomorrow":"archived"));
-  const archivedTotal = useMemo(()=> orders.filter(o=> o.when === "archived").reduce((s,o)=> s+o.total, 0), [orders]);
-  const updateStatus = (id, status) => { setOrders(prev=> prev.map(o=> { if (o.id!==id) return o; const updated = { ...o, status }; if (status === "delivered") updated.when = "archived"; return updated; })); setSelected(s=> s? {...s, status, when: status==="delivered"?"archived":s.when}: s); };
+  const filtered = orders.filter((o) =>
+    o.when === (tab === "today" ? "today" : tab === "tomorrow" ? "tomorrow" : "archived")
+  );
+  const archivedTotal = useMemo(
+    () => orders.filter((o) => o.when === "archived").reduce((s, o) => s + o.total, 0),
+    [orders]
+  );
+
+  const updateStatus = (id, status) => {
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== id) return o;
+        const updated = { ...o, status };
+        if (status === "delivered") updated.when = "archived";
+        return updated;
+      })
+    );
+    setSelected((s) => (s ? { ...s, status, when: status === "delivered" ? "archived" : s.when } : s));
+  };
 
   return (
     <div className="p-4">
-      <div className="rounded-2xl p-4 flex items-center justify-between shadow" style={{ background: BRAND_YELLOW }}>
-        <div className="text-lg font-bold">{tt.ordersToday}: {totals.ordersToday}</div>
-        <div className="text-lg font-bold">{tt.salesToday}: ₹{totals.salesToday.toFixed(2)}</div>
-        <button onClick={onSimulate} className="px-2 py-1 rounded bg-white text-black text-xs">{tt.simulate}</button>
-      </div>
-      <div className="mt-3 flex gap-2">
-        <button onClick={()=>setView("orders")} className={`px-3 py-2 rounded-2xl ${view==="orders"?"bg-black text-white":"bg-gray-200"}`}>Orders</button>
-        <button onClick={()=>setView("products")} className={`px-3 py-2 rounded-2xl ${view==="products"?"bg-black text-white":"bg-gray-200"}`}>{tt.productsMgmt}</button>
-        <button onClick={()=>setView("discounts")} className={`px-3 py-2 rounded-2xl ${view==="discounts"?"bg-black text-white":"bg-gray-200"}`}>{tt.discounts}</button>
-        <button onClick={()=>setView("dashboard")} className={`px-3 py-2 rounded-2xl ${view==="dashboard"?"bg-black text-white":"bg-gray-200"}`}>{tt.dashboard}</button>
+      <div
+        className="rounded-2xl p-4 flex items-center justify-between shadow"
+        style={{ background: BRAND_YELLOW }}
+      >
+        <div className="text-lg font-bold">
+          {tt.ordersToday}: {totals.ordersToday}
+        </div>
+        <div className="text-lg font-bold">₹{tt.salesToday}: ₹{totals.salesToday.toFixed(2)}</div>
+        <div className="flex items-center gap-2">
+          <button onClick={onSimulate} className="px-2 py-1 rounded bg-white text-black text-xs">
+            {tt.simulate}
+          </button>
+          <button onClick={onChangePin} className="px-2 py-1 rounded bg-white text-black text-xs">
+            {tt.changePin}
+          </button>
+          <button onClick={onLogout} className="px-2 py-1 rounded bg-white text-black text-xs">
+            {tt.logout}
+          </button>
+        </div>
       </div>
 
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => setView("orders")}
+          className={`px-3 py-2 rounded-2xl ${view === "orders" ? "bg-black text-white" : "bg-gray-200"}`}
+        >
+          Orders
+        </button>
+        <button
+          onClick={() => setView("products")}
+          className={`px-3 py-2 rounded-2xl ${view === "products" ? "bg-black text-white" : "bg-gray-200"}`}
+        >
+          {tt.productsMgmt}
+        </button>
+        <button
+          onClick={() => setView("discounts")}
+          className={`px-3 py-2 rounded-2xl ${view === "discounts" ? "bg-black text-white" : "bg-gray-200"}`}
+        >
+          {tt.discounts}
+        </button>
+        <button
+          onClick={() => setView("dashboard")}
+          className={`px-3 py-2 rounded-2xl ${view === "dashboard" ? "bg-black text-white" : "bg-gray-200"}`}
+        >
+          {tt.dashboard}
+        </button>
+      </div>
+
+      {/* Orders tab UI */}
       {view === "orders" && (
         <>
           <div className="mt-3 flex gap-2">
-            <button onClick={()=>setTab("today")} className={`px-4 py-2 rounded-2xl font-semibold ${tab==="today"?"bg-green-600 text-white":"bg-gray-200"}`}>{tt.tabToday}</button>
-            <button onClick={()=>setTab("tomorrow")} className={`px-4 py-2 rounded-2xl font-semibold ${tab==="tomorrow"?"bg-green-600 text-white":"bg-gray-200"}`}>{tt.tabTomorrow}</button>
-            <button onClick={()=>setTab("archived")} className={`px-4 py-2 rounded-2xl font-semibold ${tab==="archived"?"bg-green-600 text-white":"bg-gray-200"}`}>{tt.tabArchived}</button>
+            <button
+              onClick={() => setTab("today")}
+              className={`px-4 py-2 rounded-2xl font-semibold ${
+                tab === "today" ? "bg-green-600 text-white" : "bg-gray-200"
+              }`}
+            >
+              {tt.tabToday}
+            </button>
+            <button
+              onClick={() => setTab("tomorrow")}
+              className={`px-4 py-2 rounded-2xl font-semibold ${
+                tab === "tomorrow" ? "bg-green-600 text-white" : "bg-gray-200"
+              }`}
+            >
+              {tt.tabTomorrow}
+            </button>
+            <button
+              onClick={() => setTab("archived")}
+              className={`px-4 py-2 rounded-2xl font-semibold ${
+                tab === "archived" ? "bg-green-600 text-white" : "bg-gray-200"
+              }`}
+            >
+              {tt.tabArchived}
+            </button>
           </div>
-          {tab === "archived" && (<div className="mt-2 text-right font-semibold">{tt.archiveTotal}: ₹{archivedTotal.toFixed(2)}</div>)}
-          {flash && <div className="fixed inset-0 pointer-events-none flex items-center justify-center" style={{ background: "rgba(255,255,0,0.25)" }}><div className="text-4xl font-extrabold" style={{ color: BRAND_RED }}>{tt.newOrder}!</div></div>}
+
+          {tab === "archived" && (
+            <div className="mt-2 text-right font-semibold">
+              {tt.archiveTotal}: ₹{archivedTotal.toFixed(2)}
+            </div>
+          )}
+          {flash && (
+            <div
+              className="fixed inset-0 pointer-events-none flex items-center justify-center"
+              style={{ background: "rgba(255,255,0,0.25)" }}
+            >
+              <div className="text-4xl font-extrabold" style={{ color: BRAND_RED }}>
+                {tdict[lang].newOrder}!
+              </div>
+            </div>
+          )}
 
           <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {filtered.map(o=> { const cd = customerDiscounts?.[o.apt]; const displayName = typeof cd === 'object' && cd?.name ? cd.name : ''; return (
-              <div key={o.id} className="rounded-2xl p-4 shadow bg-white border-2" style={{ borderColor: STATUS_COLORS[o.status] || "#e5e7eb" }}>
-                <div className="flex items-center justify-between">
-                  <div className="text-2xl font-extrabold" style={{ color: BRAND_RED }}>Apt {o.apt}{displayName?` — ${displayName}`:''}</div>
-                  <StatusBadge status={o.status} />
+            {filtered.map((o) => {
+              const cd = customerDiscounts?.[o.apt];
+              const displayName = typeof cd === "object" && cd?.name ? cd.name : "";
+              return (
+                <div
+                  key={o.id}
+                  className="rounded-2xl p-4 shadow bg-white border-2"
+                  style={{ borderColor: STATUS_COLORS[o.status] || "#e5e7eb" }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-2xl font-extrabold" style={{ color: BRAND_RED }}>
+                      Apt {o.apt}
+                      {displayName ? ` — ${displayName}` : ""}
+                    </div>
+                    <StatusBadge status={o.status} />
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {o.items.map((i, idx) => (
+                      <div key={idx} className="text-lg font-semibold">
+                        • {i.name} — {i.qty} {i.unit}{" "}
+                        {(i.pdisc || i.cdisc) && (
+                          <span className="text-xs text-green-700 ml-2">
+                            (-{i.pdisc || 0}%{i.cdisc ? `, -${i.cdisc}%` : ""})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 text-lg font-bold">₹{o.total.toFixed(2)}</div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {orderStages.map((s) => (
+                      <span
+                        key={s}
+                        className={`px-2 py-1 rounded-full text-xs ${
+                          o.status === s ? "bg-black text-white" : "bg-gray-200"
+                        }`}
+                      >
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => updateStatus(o.id, "accepted")}
+                      className="px-3 py-2 rounded-2xl bg-green-700 text-white"
+                    >
+                      {tt.accept}
+                    </button>
+                    <button
+                      onClick={() => updateStatus(o.id, "preparing")}
+                      className="px-3 py-2 rounded-2xl bg-yellow-500"
+                    >
+                      {tt.preparing}
+                    </button>
+                    <button
+                      onClick={() => updateStatus(o.id, "ready")}
+                      className="px-3 py-2 rounded-2xl bg-blue-600 text-white"
+                    >
+                      {tt.ready}
+                    </button>
+                    <button
+                      onClick={() => updateStatus(o.id, "delivered")}
+                      className="px-3 py-2 rounded-2xl bg-gray-800 text-white"
+                    >
+                      {tt.delivered}
+                    </button>
+                    <button onClick={() => setSelected(o)} className="ml-auto underline">
+                      Details
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-1 space-y-1">{o.items.map((i,idx)=> (<div key={idx} className="text-lg font-semibold">• {i.name} — {i.qty} {i.unit} {(i.pdisc||i.cdisc) && <span className="text-xs text-green-700 ml-2">(-{i.pdisc||0}%{i.cdisc?`, -${i.cdisc}%`:''})</span>}</div>))}</div>
-                <div className="mt-2 text-lg font-bold">₹{o.total.toFixed(2)}</div>
-                <div className="mt-2 flex flex-wrap gap-1">{orderStages.map(s=> (<span key={s} className={`px-2 py-1 rounded-full text-xs ${o.status===s?"bg-black text-white":"bg-gray-200"}`}>{s}</span>))}</div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button onClick={()=>updateStatus(o.id, "accepted")} className="px-3 py-2 rounded-2xl bg-green-700 text-white">{tt.accept}</button>
-                  <button onClick={()=>updateStatus(o.id, "preparing")} className="px-3 py-2 rounded-2xl bg-yellow-500">{tt.preparing}</button>
-                  <button onClick={()=>updateStatus(o.id, "ready")} className="px-3 py-2 rounded-2xl bg-blue-600 text-white">{tt.ready}</button>
-                  <button onClick={()=>updateStatus(o.id, "delivered")} className="px-3 py-2 rounded-2xl bg-gray-800 text-white">{tt.delivered}</button>
-                  <button onClick={()=>setSelected(o)} className="ml-auto underline">Details</button>
-                </div>
-              </div>
-            )})}
+              );
+            })}
           </div>
 
           {selected && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl p-4 w-full max-w-md">
-                <div className="flex items-center justify-between mb-2"><div className="text-xl font-bold">#{selected.id} — Apt {selected.apt}</div><StatusBadge status={selected.status} /></div>
-                <div className="text-sm text-gray-600">{selected.items.map(i=> `${i.name} ${i.qty}${i.unit}`).join(", ")}</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xl font-bold">
+                    #{selected.id} — Apt {selected.apt}
+                  </div>
+                  <StatusBadge status={selected.status} />
+                </div>
+                <div className="text-sm text-gray-600">
+                  {selected.items.map((i) => `${i.name} ${i.qty}${i.unit}`).join(", ")}
+                </div>
                 <div className="mt-2 font-semibold">₹{selected.total.toFixed(2)}</div>
-                <div className="mt-3 flex flex-wrap gap-2">{orderStages.map(s=> (<button key={s} onClick={()=>updateStatus(selected.id, s)} className={`px-3 py-2 rounded-2xl ${selected.status===s?"bg-green-700 text-white":"bg-gray-200"}`}>{s}</button>))}</div>
-                <div className="mt-4 flex justify-end"><button onClick={()=>setSelected(null)} className="px-3 py-2 rounded-xl bg-gray-800 text-white">Close</button></div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {orderStages.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => updateStatus(selected.id, s)}
+                      className={`px-3 py-2 rounded-2xl ${
+                        selected.status === s ? "bg-green-700 text-white" : "bg-gray-200"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={() => setSelected(null)}
+                    className="px-3 py-2 rounded-xl bg-gray-800 text-white"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -548,8 +1045,8 @@ function Kiosk({ lang, orders, setOrders, flash, setFlash, totals, lastNewOrder,
   );
 }
 
-// ------- Product Management (with Confirm Delete + Undo and Category) -------
-function ProductManagement({ lang, products, setProducts }){
+/* -------- Product Management -------- */
+function ProductManagement({ lang, products, setProducts }) {
   const { tt } = useTranslate(lang);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -563,7 +1060,13 @@ function ProductManagement({ lang, products, setProducts }){
   const [confirmId, setConfirmId] = useState(null);
   const [undo, setUndo] = useState(null);
 
-  const onUpload = (e)=>{ const file = e.target.files?.[0]; if (!file) return; const fr = new FileReader(); fr.onload = ()=> setUploadData(fr.result); fr.readAsDataURL(file); };
+  const onUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fr = new FileReader();
+    fr.onload = () => setUploadData(fr.result);
+    fr.readAsDataURL(file);
+  };
 
   const addProduct = () => {
     const key = name.trim().toLowerCase() || `p_${Date.now()}`;
@@ -571,53 +1074,211 @@ function ProductManagement({ lang, products, setProducts }){
     if (imgMode === "emoji") img = PRODUCT_LIBRARY[emojiKey]?.img || "🛒";
     if (imgMode === "url" && imgURL) img = imgURL.trim();
     if (imgMode === "upload" && uploadData) img = uploadData;
+
     const localized = { en: name || "New", mr: name || "नवे", hi: name || "नया" };
-    setProducts(prev=> [{ id: key, name: localized, price: Number(price||0), unit: "kg", img, available: true, discountPct: Number(discountPct||0), category }, ...prev]);
-    setName(""); setPrice(""); setDiscountPct(0); setImgURL(""); setUploadData(""); setCategory(CATEGORIES[0]);
+    setProducts((prev) => [
+      {
+        id: key,
+        name: localized,
+        price: Number(price || 0),
+        unit: "kg",
+        img,
+        available: true,
+        discountPct: Number(discountPct || 0),
+        category,
+      },
+      ...prev,
+    ]);
+    setName("");
+    setPrice("");
+    setDiscountPct(0);
+    setImgURL("");
+    setUploadData("");
+    setCategory(CATEGORIES[0]);
   };
 
-  const toggleAvail = (id) => setProducts(prev=> prev.map(p=> p.id===id? {...p, available: !p.available}: p));
-  const setProdDiscount = (id, v) => setProducts(prev=> prev.map(p=> p.id===id? {...p, discountPct: Number(v||0)}: p));
-  const setProdCategory = (id, cat) => setProducts(prev=> prev.map(p=> p.id===id? {...p, category: cat}: p));
+  const toggleAvail = (id) =>
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, available: !p.available } : p)));
+  const setProdDiscount = (id, v) =>
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, discountPct: Number(v || 0) } : p)));
+  const setProdCategory = (id, cat) =>
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, category: cat } : p)));
 
   const askDelete = (id) => setConfirmId(id);
-  const doDelete = () => { if (!confirmId) return; setProducts(prev=> { const target = prev.find(p=> p.id===confirmId); const next = prev.filter(p=> p.id !== confirmId); const timer = setTimeout(()=> setUndo(null), 4000); setUndo({ product: target, timer }); return next; }); setConfirmId(null); };
-  const undoDelete = () => { if (!undo?.product) return; clearTimeout(undo.timer); setProducts(prev=> [undo.product, ...prev]); setUndo(null); };
+  const doDelete = () => {
+    if (!confirmId) return;
+    setProducts((prev) => {
+      const target = prev.find((p) => p.id === confirmId);
+      const next = prev.filter((p) => p.id !== confirmId);
+      const timer = setTimeout(() => setUndo(null), 4000);
+      setUndo({ product: target, timer });
+      return next;
+    });
+    setConfirmId(null);
+  };
+  const undoDelete = () => {
+    if (!undo?.product) return;
+    clearTimeout(undo.timer);
+    setProducts((prev) => [undo.product, ...prev]);
+    setUndo(null);
+  };
 
   return (
     <div className="p-4">
       <h3 className="text-xl font-bold mb-2">{tt.productsMgmt}</h3>
 
-      <div className="border-2 rounded-2xl p-3 bg-white mb-4" style={{ borderColor: BRAND_YELLOW }}>
-        <div className="flex items-center justify-between"><div className="text-lg font-semibold">{tt.addNewProduct}</div></div>
-        <div className="text-xs text-gray-600 mt-1">This section is only for creating a NEW product. Existing products are listed below.</div>
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div className="flex-1 min-w-[160px]"><label className="text-xs">Name</label><input value={name} onChange={(e)=>setName(e.target.value)} placeholder="Potato" className="border rounded px-2 py-2 w-full"/></div>
-          <div className="w-36"><label className="text-xs">Price/kg (₹)</label><input value={price} onChange={(e)=>setPrice(e.target.value)} placeholder="20" className="border rounded px-2 py-2 w-full"/></div>
-          <div className="w-40"><label className="text-xs">{tdict[lang].productDiscount}</label><input value={discountPct} onChange={(e)=>setDiscountPct(e.target.value)} placeholder="0" className="border rounded px-2 py-2 w-full"/></div>
-          <div className="w-40"><label className="text-xs">{tdict[lang].category}</label><select value={category} onChange={(e)=>setCategory(e.target.value)} className="border rounded px-2 py-2 w-full">{CATEGORIES.map(c=> <option key={c}>{c}</option>)}</select></div>
+      <div
+        className="border-2 rounded-2xl p-3 bg-white mb-4"
+        style={{ borderColor: BRAND_YELLOW }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="text-lg font-semibold">{tt.addNewProduct}</div>
         </div>
+        <div className="text-xs text-gray-600 mt-1">
+          This section is only for creating a NEW product. Existing products are listed below.
+        </div>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-xs">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Potato"
+              className="border rounded px-2 py-2 w-full"
+            />
+          </div>
+          <div className="w-36">
+            <label className="text-xs">Price/kg (₹)</label>
+            <input
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="20"
+              className="border rounded px-2 py-2 w-full"
+            />
+          </div>
+          <div className="w-40">
+            <label className="text-xs">{tdict[lang].productDiscount}</label>
+            <input
+              value={discountPct}
+              onChange={(e) => setDiscountPct(e.target.value)}
+              placeholder="0"
+              className="border rounded px-2 py-2 w-full"
+            />
+          </div>
+          <div className="w-40">
+            <label className="text-xs">{tdict[lang].category}</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="border rounded px-2 py-2 w-full"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="mt-3">
           <div className="text-xs mb-1">{tdict[lang].image}</div>
           <div className="flex flex-wrap gap-3 items-center">
-            <label className="flex items-center gap-1"><input type="radio" checked={imgMode==="emoji"} onChange={()=>setImgMode("emoji")} /> {tdict[lang].chooseEmoji}<select className="ml-2 border rounded px-2 py-1" value={emojiKey} onChange={(e)=>setEmojiKey(e.target.value)}>{Object.keys(PRODUCT_LIBRARY).map(k=> <option key={k} value={k}>{k}</option>)}</select><span className="ml-1 text-2xl">{PRODUCT_LIBRARY[emojiKey]?.img}</span></label>
-            <label className="flex items-center gap-1"><input type="radio" checked={imgMode==="url"} onChange={()=>setImgMode("url")} /> {tdict[lang].imageURL}<input value={imgURL} onChange={(e)=>setImgURL(e.target.value)} placeholder="https://..." className="ml-2 border rounded px-2 py-1 w-56"/></label>
-            <label className="flex items-center gap-1"><input type="radio" checked={imgMode==="upload"} onChange={()=>setImgMode("upload")} /> {tdict[lang].upload}<input type="file" accept="image/*" onChange={onUpload} className="ml-2"/></label>
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                checked={imgMode === "emoji"}
+                onChange={() => setImgMode("emoji")}
+              />{" "}
+              {tdict[lang].chooseEmoji}
+              <select
+                className="ml-2 border rounded px-2 py-1"
+                value={emojiKey}
+                onChange={(e) => setEmojiKey(e.target.value)}
+              >
+                {Object.keys(PRODUCT_LIBRARY).map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+              <span className="ml-1 text-2xl">{PRODUCT_LIBRARY[emojiKey]?.img}</span>
+            </label>
+
+            <label className="flex items-center gap-1">
+              <input type="radio" checked={imgMode === "url"} onChange={() => setImgMode("url")} />{" "}
+              {tdict[lang].imageURL}
+              <input
+                value={imgURL}
+                onChange={(e) => setImgURL(e.target.value)}
+                placeholder="https://..."
+                className="ml-2 border rounded px-2 py-1 w-56"
+              />
+            </label>
+
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                checked={imgMode === "upload"}
+                onChange={() => setImgMode("upload")}
+              />{" "}
+              {tdict[lang].upload}
+              <input type="file" accept="image/*" onChange={onUpload} className="ml-2" />
+            </label>
           </div>
         </div>
-        <button onClick={addProduct} className="mt-3 px-4 py-2 rounded-2xl text-white" style={{ background: BRAND_RED }}>Add Product</button>
+
+        <button
+          onClick={addProduct}
+          className="mt-3 px-4 py-2 rounded-2xl text-white"
+          style={{ background: BRAND_RED }}
+        >
+          Add Product
+        </button>
       </div>
 
-      <div className="flex items-center justify-between mb-2"><div className="text-lg font-semibold">{tdict[lang].existingProducts}</div></div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-lg font-semibold">{tdict[lang].existingProducts}</div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {products.map(p=> (
+        {products.map((p) => (
           <div key={p.id} className="border rounded-2xl p-3 bg-white">
-            <div className="flex items-center gap-2"><ProductThumb img={p.img} /><div className="font-semibold">{p.name.en}</div></div>
+            <div className="flex items-center gap-2">
+              <ProductThumb img={p.img} />
+              <div className="font-semibold">{p.name.en}</div>
+            </div>
             <div className="text-sm text-gray-600 mt-1">₹{p.price}/kg</div>
-            <div className="mt-2 flex items-center gap-2"><label className="text-sm">Available</label><input type="checkbox" checked={p.available} onChange={()=>toggleAvail(p.id)} /></div>
-            <div className="mt-2"><label className="text-xs">{tdict[lang].productDiscount}</label><input value={p.discountPct} onChange={(e)=>setProdDiscount(p.id, e.target.value)} className="border rounded px-2 py-1 w-full"/></div>
-            <div className="mt-2"><label className="text-xs">{tdict[lang].category}</label><select value={p.category||'Other'} onChange={(e)=>setProdCategory(p.id, e.target.value)} className="border rounded px-2 py-1 w-full">{CATEGORIES.map(c=> <option key={c}>{c}</option>)}</select></div>
-            <div className="mt-3 flex justify-between"><button onClick={()=>askDelete(p.id)} className="px-3 py-2 rounded-xl text-white" style={{ background: BRAND_RED }}>{tdict[lang].delete}</button></div>
+            <div className="mt-2 flex items-center gap-2">
+              <label className="text-sm">Available</label>
+              <input type="checkbox" checked={p.available} onChange={() => toggleAvail(p.id)} />
+            </div>
+            <div className="mt-2">
+              <label className="text-xs">{tdict[lang].productDiscount}</label>
+              <input
+                value={p.discountPct}
+                onChange={(e) => setProdDiscount(p.id, e.target.value)}
+                className="border rounded px-2 py-1 w-full"
+              />
+            </div>
+            <div className="mt-2">
+              <label className="text-xs">{tdict[lang].category}</label>
+              <select
+                value={p.category || "Other"}
+                onChange={(e) => setProdCategory(p.id, e.target.value)}
+                className="border rounded px-2 py-1 w-full"
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-3 flex justify-between">
+              <button
+                onClick={() => askDelete(p.id)}
+                className="px-3 py-2 rounded-xl text-white"
+                style={{ background: BRAND_RED }}
+              >
+                {tdict[lang].delete}
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -626,41 +1287,116 @@ function ProductManagement({ lang, products, setProducts }){
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-4 w-full max-w-sm">
             <div className="text-lg font-bold mb-2">{tdict[lang].confirmDelete}</div>
-            <div className="mt-3 flex justify-end gap-2"><button onClick={()=>setConfirmId(null)} className="px-4 py-2 rounded-2xl bg-gray-200">{tdict[lang].cancel}</button><button onClick={doDelete} className="px-4 py-2 rounded-2xl text-white" style={{ background: BRAND_RED }}>{tdict[lang].confirm}</button></div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmId(null)}
+                className="px-4 py-2 rounded-2xl bg-gray-200"
+              >
+                {tdict[lang].cancel}
+              </button>
+              <button
+                onClick={doDelete}
+                className="px-4 py-2 rounded-2xl text-white"
+                style={{ background: BRAND_RED }}
+              >
+                {tdict[lang].confirm}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {undo?.product && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded-full shadow z-40 flex items-center gap-3"><span>{tt.deleted}</span><button onClick={undoDelete} className="underline">{tt.undo}</button></div>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded-full shadow z-40 flex items-center gap-3">
+          <span>{tdict[lang].deleted}</span>
+          <button onClick={undoDelete} className="underline">
+            {tdict[lang].undo}
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-function Discounts({ lang, customerDiscounts, setCustomerDiscounts }){
+/* -------- Discounts -------- */
+function Discounts({ lang, customerDiscounts, setCustomerDiscounts }) {
   const { tt } = useTranslate(lang);
   const [apt, setApt] = useState("");
   const [name, setName] = useState("");
   const [pct, setPct] = useState("");
-  const add = ()=>{ const a = (apt||"").trim(); if (!a) return; const p = Number(pct||0); const nm = (name||"").trim(); setCustomerDiscounts(prev=> ({...prev, [a]: { pct: p, name: nm }})); setApt(""); setPct(""); setName(""); };
-  const remove = (a)=> setCustomerDiscounts(prev=> { const cp={...prev}; delete cp[a]; return cp; });
+
+  const add = () => {
+    const a = (apt || "").trim();
+    if (!a) return;
+    const p = Number(pct || 0);
+    const nm = (name || "").trim();
+    setCustomerDiscounts((prev) => ({ ...prev, [a]: { pct: p, name: nm } }));
+    setApt("");
+    setPct("");
+    setName("");
+  };
+  const remove = (a) =>
+    setCustomerDiscounts((prev) => {
+      const cp = { ...prev };
+      delete cp[a];
+      return cp;
+    });
+
   return (
     <div className="p-4">
       <h3 className="text-xl font-bold mb-2">{tdict[lang].discounts}</h3>
       <div className="border rounded-2xl p-3 bg-white mb-3">
         <div className="flex flex-wrap gap-2 items-end">
-          <div className="w-32"><label className="text-xs">{tt.apt}</label><input value={apt} onChange={(e)=>setApt(e.target.value)} placeholder="3B" className="border rounded px-2 py-2 w-full"/></div>
-          <div className="flex-1 min-w-[140px]"><label className="text-xs">{tt.name}</label><input value={name} onChange={(e)=>setName(e.target.value)} placeholder="Ramesh" className="border rounded px-2 py-2 w-full"/></div>
-          <div className="w-40"><label className="text-xs">{tt.customerDiscount}</label><input value={pct} onChange={(e)=>setPct(e.target.value)} placeholder="5" className="border rounded px-2 py-2 w-full"/></div>
-          <button onClick={add} className="px-4 py-2 rounded-2xl text-white" style={{ background: BRAND_RED }}>{tdict[lang].addDiscount}</button>
+          <div className="w-32">
+            <label className="text-xs">{tt.apt}</label>
+            <input
+              value={apt}
+              onChange={(e) => setApt(e.target.value)}
+              placeholder="3B"
+              className="border rounded px-2 py-2 w-full"
+            />
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-xs">{tt.name}</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ramesh"
+              className="border rounded px-2 py-2 w-full"
+            />
+          </div>
+          <div className="w-40">
+            <label className="text-xs">{tt.customerDiscount}</label>
+            <input
+              value={pct}
+              onChange={(e) => setPct(e.target.value)}
+              placeholder="5"
+              className="border rounded px-2 py-2 w-full"
+            />
+          </div>
+          <button
+            onClick={add}
+            className="px-4 py-2 rounded-2xl text-white"
+            style={{ background: BRAND_RED }}
+          >
+            {tdict[lang].addDiscount}
+          </button>
         </div>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {Object.entries(customerDiscounts).map(([a, v])=> (
+        {Object.entries(customerDiscounts).map(([a, v]) => (
           <div key={a} className="border rounded-2xl p-3 bg-white flex items-center justify-between">
-            <div><div className="font-semibold">Apt {a}{v?.name?` — ${v.name}`:''}</div><div className="text-sm text-gray-600">-{(typeof v==='object'?v.pct:v)}%</div></div>
-            <button onClick={()=>remove(a)} className="px-2 py-1 rounded bg-gray-200">Remove</button>
+            <div>
+              <div className="font-semibold">
+                Apt {a}
+                {v?.name ? ` — ${v.name}` : ""}
+              </div>
+              <div className="text-sm text-gray-600">-{(typeof v === "object" ? v.pct : v)}%</div>
+            </div>
+            <button onClick={() => remove(a)} className="px-2 py-1 rounded bg-gray-200">
+              Remove
+            </button>
           </div>
         ))}
       </div>
@@ -668,112 +1404,452 @@ function Discounts({ lang, customerDiscounts, setCustomerDiscounts }){
   );
 }
 
-function Dashboard({ lang, orders, customerDiscounts }){
+/* -------- Dashboard -------- */
+function Dashboard({ lang, orders, customerDiscounts }) {
   const { tt } = useTranslate(lang);
-  const todayStr = new Date().toISOString().slice(0,10);
-  const todayOrders = orders.filter(o=> o.createdDay === todayStr);
-  const revenue = todayOrders.reduce((s,o)=> s+o.total, 0);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayOrders = orders.filter((o) => o.createdDay === todayStr);
+  const revenue = todayOrders.reduce((s, o) => s + o.total, 0);
   const count = todayOrders.length;
-  const byApt = {}; const byProd = {};
-  todayOrders.forEach(o=>{ byApt[o.apt] = (byApt[o.apt]||0) + o.total; o.items.forEach(it=>{ byProd[it.name] = (byProd[it.name]||0) + it.qty; }); });
-  const topApt = Object.entries(byApt).sort((a,b)=> b[1]-a[1]).slice(0,5);
-  const topProd = Object.entries(byProd).sort((a,b)=> b[1]-a[1]).slice(0,5);
+  const byApt = {};
+  const byProd = {};
+  todayOrders.forEach((o) => {
+    byApt[o.apt] = (byApt[o.apt] || 0) + o.total;
+    o.items.forEach((it) => {
+      byProd[it.name] = (byProd[it.name] || 0) + it.qty;
+    });
+  });
+  const topApt = Object.entries(byApt).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topProd = Object.entries(byProd).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
   return (
     <div className="p-4">
       <h3 className="text-xl font-bold mb-2">{tt.dashboard}</h3>
       <div className="grid grid-cols-2 gap-3">
-        <div className="border rounded-2xl p-3 bg-white"><div className="text-sm text-gray-600">{tt.ordersToday}</div><div className="text-2xl font-extrabold">{count}</div></div>
-        <div className="border rounded-2xl p-3 bg-white"><div className="text-sm text-gray-600">{tt.salesToday}</div><div className="text-2xl font-extrabold">₹{revenue.toFixed(2)}</div></div>
+        <div className="border rounded-2xl p-3 bg-white">
+          <div className="text-sm text-gray-600">{tt.ordersToday}</div>
+          <div className="text-2xl font-extrabold">{count}</div>
+        </div>
+        <div className="border rounded-2xl p-3 bg-white">
+          <div className="text-sm text-gray-600">{tt.salesToday}</div>
+          <div className="text-2xl font-extrabold">₹{revenue.toFixed(2)}</div>
+        </div>
       </div>
       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="border rounded-2xl p-3 bg-white"><div className="font-semibold mb-1">Top Apartments</div>{topApt.map(([a,v])=> {const nm = typeof customerDiscounts[a]==='object'?customerDiscounts[a].name:''; return <div key={a} className="flex justify-between"><span>Apt {a}{nm?` — ${nm}`:''}</span><span>₹{v.toFixed(0)}</span></div>})}</div>
-        <div className="border rounded-2xl p-3 bg-white"><div className="font-semibold mb-1">Top Products (kg)</div>{topProd.map(([p,v])=> <div key={p} className="flex justify-between"><span>{p}</span><span>{v}</span></div>)}</div>
+        <div className="border rounded-2xl p-3 bg-white">
+          <div className="font-semibold mb-1">Top Apartments</div>
+          {topApt.map(([a, v]) => {
+            const nm =
+              typeof customerDiscounts[a] === "object" ? customerDiscounts[a].name : "";
+            return (
+              <div key={a} className="flex justify-between">
+                <span>
+                  Apt {a}
+                  {nm ? ` — ${nm}` : ""}
+                </span>
+                <span>₹{v.toFixed(0)}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="border rounded-2xl p-3 bg-white">
+          <div className="font-semibold mb-1">Top Products (kg)</div>
+          {topProd.map(([p, v]) => (
+            <div key={p} className="flex justify-between">
+              <span>{p}</span>
+              <span>{v}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function MyOrders({ lang, orders, kOrders, onBack }){
+/* -------- Customer Orders (shows status from kiosk) -------- */
+function MyOrders({ lang, orders, kOrders, onBack }) {
   const { tt } = useTranslate(lang);
-  if (!orders.length) return (
-    <div className="p-4 max-w-md mx-auto">
-      <div className="flex items-center justify-between mb-2"><h2 className="text-xl font-bold">{tt.myOrders}</h2><button onClick={onBack} className="underline">← {tt.back}</button></div>
-      <div className="text-sm text-gray-600">{tt.noOrders}</div>
-    </div>
-  );
+  if (!orders.length)
+    return (
+      <div className="p-4 max-w-md mx-auto">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-bold">{tt.myOrders}</h2>
+          <button onClick={onBack} className="underline">
+            ← {tt.back}
+          </button>
+        </div>
+        <div className="text-sm text-gray-600">{tt.noOrders}</div>
+      </div>
+    );
   return (
     <div className="p-4 max-w-md mx-auto">
-      <div className="flex items-center justify-between mb-2"><h2 className="text-xl font-bold">{tt.myOrders}</h2><button onClick={onBack} className="underline">← {tt.back}</button></div>
-      <div className="space-y-2">{orders.map(o=>{ const kiosk = kOrders.find(ko=> ko.id===o.id); const st = kiosk?.status || o.status || 'new'; return (
-        <div key={o.id} className="border rounded-xl p-3 bg-white flex items-center justify-between"><div><div className="font-semibold">#{o.id}</div><div className="text-sm text-gray-600">{o.items.map(i=> i.name).join(", ")}</div></div><StatusBadge status={st} /></div>
-      );})}</div>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xl font-bold">{tt.myOrders}</h2>
+        <button onClick={onBack} className="underline">
+          ← {tt.back}
+        </button>
+      </div>
+      <div className="space-y-2">
+        {orders.map((o) => {
+          const kiosk = kOrders.find((ko) => ko.id === o.id);
+          const st = kiosk?.status || o.status || "new";
+          return (
+            <div
+              key={o.id}
+              className="border rounded-xl p-3 bg-white flex items-center justify-between"
+            >
+              <div>
+                <div className="font-semibold">#{o.id}</div>
+                <div className="text-sm text-gray-600">
+                  {o.items.map((i) => i.name).join(", ")}
+                </div>
+              </div>
+              <StatusBadge status={st} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-export default function App(){
+/* -------- Vendor auth -------- */
+function VendorLogin({ lang, onCancel, onSuccess }) {
+  const { tt } = useTranslate(lang);
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const doLogin = () => {
+    const saved = localStorage.getItem("vendorPIN") || "1234";
+    if (pin.trim() === saved) {
+      onSuccess();
+      setError("");
+    } else {
+      setError(tt.wrongPin);
+    }
+  };
+  return (
+    <div className="flex items-center justify-center p-6 h-[calc(100vh-64px)] bg-gray-50">
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow">
+        <div className="text-xl font-bold mb-3">{tt.vendorLogin}</div>
+        <label className="text-sm">{tt.enterPin}</label>
+        <input
+          type="password"
+          value={pin}
+          onChange={(e) => setPin(e.target.value)}
+          className="border rounded px-3 py-2 w-full mt-1"
+          placeholder={tt.pin}
+        />
+        {error && <div className="mt-2 text-red-700 text-sm">{error}</div>}
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={doLogin}
+            className="px-4 py-2 rounded-2xl text-white"
+            style={{ background: BRAND_RED }}
+          >
+            {tt.login}
+          </button>
+          <button onClick={onCancel} className="px-4 py-2 rounded-2xl bg-gray-200">
+            {tdict[lang].cancel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangePinModal({ lang, onClose, onSaved }) {
+  const { tt } = useTranslate(lang);
+  const [pin1, setPin1] = useState("");
+  const [pin2, setPin2] = useState("");
+  const save = () => {
+    if (!pin1 || pin1 !== pin2) return;
+    localStorage.setItem("vendorPIN", pin1);
+    onSaved();
+  };
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl p-4 w-full max-w-sm">
+        <div className="text-lg font-bold mb-2">{tt.changePin}</div>
+        <input
+          type="password"
+          value={pin1}
+          onChange={(e) => setPin1(e.target.value)}
+          placeholder={`${tt.pin} (new)`}
+          className="border rounded px-3 py-2 w-full mb-2"
+        />
+        <input
+          type="password"
+          value={pin2}
+          onChange={(e) => setPin2(e.target.value)}
+          placeholder={`${tt.pin} (repeat)`}
+          className="border rounded px-3 py-2 w-full"
+        />
+        <div className="mt-3 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-2xl bg-gray-200">
+            {tdict[lang].cancel}
+          </button>
+          <button
+            onClick={save}
+            className="px-4 py-2 rounded-2xl text-white"
+            style={{ background: BRAND_RED }}
+          >
+            {tt.savePin}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------- Root App -------- */
+export default function App() {
   const [lang, setLang] = useState("en");
   const [mode, setMode] = useState("customer");
   const [step, setStep] = useState("lang");
   const [profile, setProfile] = useState(null);
+
   const [products, setProducts] = useState(defaultProducts);
   const [selections, setSelections] = useState({});
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
   const [orderId, setOrderId] = useState(null);
+
   const [customerDiscounts, setCustomerDiscounts] = useState({});
   const [kOrders, setKOrders] = useState([
-    { id: 1234, apt: "3B", items: [{name:"Potato", qty:2, unit:"kg", price:20}], status:"accepted", when:"today", total:40, createdDay: new Date().toISOString().slice(0,10) },
+    {
+      id: 1234,
+      apt: "3B",
+      items: [{ name: "Potato", qty: 2, unit: "kg", price: 20 }],
+      status: "accepted",
+      when: "today",
+      total: 40,
+      createdDay: new Date().toISOString().slice(0, 10),
+    },
   ]);
+
   const [flash, setFlash] = useState(false);
   const [lastNewOrder, setLastNewOrder] = useState(null);
   const [kioskView, setKioskView] = useState("orders");
-  const todayStr = new Date().toISOString().slice(0,10);
 
-  const totals = useMemo(()=>{ const todayOrders = kOrders.filter(o=> o.createdDay === todayStr); const ordersToday = todayOrders.length; const salesToday = todayOrders.reduce((s,o)=> s+o.total, 0); return { ordersToday, salesToday }; },[kOrders, todayStr]);
+  // Vendor auth
+  const [vendorAuthed, setVendorAuthed] = useState(false);
+  const [showChangePin, setShowChangePin] = useState(false);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const totals = useMemo(() => {
+    const todayOrders = kOrders.filter((o) => o.createdDay === todayStr);
+    const ordersToday = todayOrders.length;
+    const salesToday = todayOrders.reduce((s, o) => s + o.total, 0);
+    return { ordersToday, salesToday };
+  }, [kOrders, todayStr]);
+
+  // ---- Persistence (localStorage) ----
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem("products") || "null");
+      if (p?.length) setProducts(p);
+    } catch {}
+    try {
+      const d = JSON.parse(localStorage.getItem("customerDiscounts") || "null");
+      if (d && typeof d === "object") setCustomerDiscounts(d);
+    } catch {}
+    try {
+      const ko = JSON.parse(localStorage.getItem("kOrders") || "null");
+      if (ko?.length) setKOrders(ko);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("products", JSON.stringify(products));
+  }, [products]);
+  useEffect(() => {
+    localStorage.setItem("customerDiscounts", JSON.stringify(customerDiscounts));
+  }, [customerDiscounts]);
+  useEffect(() => {
+    localStorage.setItem("kOrders", JSON.stringify(kOrders));
+  }, [kOrders]);
+
   const { tt } = useTranslate(lang);
 
   const addAllToCart = () => {
-    const items = Object.entries(selections).filter(([id, q])=> q && !isNaN(parseFloat(q))).map(([id, q])=> { const p = products.find(pp=> pp.id===id); return { id, name: p.name?.[lang] || p.name.en, qty: parseFloat(q), price: p.price }; });
-    if (!items.length) return; setCart(prev=> [...items, ...prev]); setSelections({});
+    const items = Object.entries(selections)
+      .filter(([_, q]) => q && !isNaN(parseFloat(q)))
+      .map(([id, q]) => {
+        const p = products.find((pp) => pp.id === id);
+        return { id, name: p.name?.[lang] || p.name.en, qty: parseFloat(q), price: p.price };
+      });
+    if (!items.length) return;
+    setCart((prev) => [...items, ...prev]);
+    setSelections({});
   };
 
-  const placeOrder = ({delivery, totalCalculated, lines}) => {
-    const id = Math.floor(1000 + Math.random()*9000); setOrderId(id);
-    const newOrderCust = { id, items: lines.map(l=> ({...l})), status: "new" }; setOrders(prev=> [newOrderCust, ...prev]);
+  const placeOrder = ({ delivery, totalCalculated, lines }) => {
+    const id = Math.floor(1000 + Math.random() * 9000);
+    setOrderId(id);
+    const newOrderCust = { id, items: lines.map((l) => ({ ...l })), status: "new" };
+    setOrders((prev) => [newOrderCust, ...prev]);
+
     const apt = profile?.apt || "3B";
-    const kioskOrder = { id, apt, items: lines.map(l=> ({name:l.name, qty:l.qty, unit:"kg", price:l.price})), status:"new", when: delivery==="tomorrow"?"tomorrow":"today", total: totalCalculated, createdDay: todayStr };
-    setKOrders(prev=> [kioskOrder, ...prev]); setLastNewOrder({ id, apt }); setCart([]);
+    const kioskOrder = {
+      id,
+      apt,
+      items: lines.map((l) => ({ name: l.name, qty: l.qty, unit: "kg", price: l.price, pdisc: l.productDiscount, cdisc: l.customerDiscount })),
+      status: "new",
+      when: delivery === "tomorrow" ? "tomorrow" : "today",
+      total: totalCalculated,
+      createdDay: todayStr,
+    };
+    setKOrders((prev) => [kioskOrder, ...prev]);
+    setLastNewOrder({ id, apt });
+    setCart([]);
   };
 
-  const simulateOrder = ()=>{ const id = Math.floor(1000 + Math.random()*9000); const kioskOrder = { id, apt: "4A", items: [{name:"Potato", qty:2, unit:"kg", price:20}], status:"new", when: "today", total: 40, createdDay: todayStr }; setKOrders(prev=> [kioskOrder, ...prev]); setLastNewOrder({ id, apt: "4A" }); };
+  const simulateOrder = () => {
+    const id = Math.floor(1000 + Math.random() * 9000);
+    const kioskOrder = {
+      id,
+      apt: "4A",
+      items: [{ name: "Potato", qty: 2, unit: "kg", price: 20 }],
+      status: "new",
+      when: "today",
+      total: 40,
+      createdDay: todayStr,
+    };
+    setKOrders((prev) => [kioskOrder, ...prev]);
+    setLastNewOrder({ id, apt: "4A" });
+  };
 
   return (
     <div className="min-h-screen" style={{ background: "#fafafa" }}>
-      <Header lang={lang} setLang={setLang} active={mode} onNavigate={setMode} title={mode==="kiosk"?tdict[lang].kioskTitle:tdict[lang].appTitle} onGoOrders={()=> setStep("orders")} />
+      <Header
+        lang={lang}
+        setLang={setLang}
+        active={mode}
+        onNavigate={setMode}
+        title={mode === "kiosk" ? tdict[lang].kioskTitle : tdict[lang].appTitle}
+        onGoOrders={() => setStep("orders")}
+      />
 
-      {mode === "customer" && (
-        step === "lang" ? (<LanguageFirst lang={lang} setLang={setLang} onNext={()=> setStep("society")} />)
-        : step === "society" ? (<SocietyApartment lang={lang} onDone={(p)=> { setProfile(p); setStep("products"); }} />)
-        : orderId ? (<Confirmation lang={lang} orderId={orderId} onDone={()=> { setOrderId(null); setStep("orders"); }} />)
-        : step === "checkout" ? (<CartCheckout lang={lang} cart={cart} setCart={setCart} onPlace={placeOrder} onBack={()=> setStep("products")} products={products} customerDiscounts={customerDiscounts} profile={profile} />)
-        : step === "orders" ? (<MyOrders lang={lang} orders={orders} kOrders={kOrders} onBack={()=> setStep("products")} />)
-        : (<>
-            <ProductListMultiAdd lang={lang} products={products} selections={selections} setSelections={setSelections} onGoCart={()=> setStep("checkout")} onGoOrders={()=> setStep("orders")} />
+      {/* CUSTOMER */}
+      {mode === "customer" &&
+        (step === "lang" ? (
+          <LanguageFirst lang={lang} setLang={setLang} onNext={() => setStep("society")} />
+        ) : step === "society" ? (
+          <SocietyApartment
+            lang={lang}
+            onDone={(p) => {
+              setProfile(p);
+              setStep("products");
+            }}
+          />
+        ) : orderId ? (
+          <Confirmation
+            lang={lang}
+            orderId={orderId}
+            onDone={() => {
+              setOrderId(null);
+              setStep("orders");
+            }}
+          />
+        ) : step === "checkout" ? (
+          <CartCheckout
+            lang={lang}
+            cart={cart}
+            setCart={setCart}
+            onPlace={placeOrder}
+            onBack={() => setStep("products")}
+            products={products}
+            customerDiscounts={customerDiscounts}
+            profile={profile}
+          />
+        ) : step === "orders" ? (
+          <MyOrders lang={lang} orders={orders} kOrders={kOrders} onBack={() => setStep("products")} />
+        ) : (
+          <>
+            <ProductListMultiAdd
+              lang={lang}
+              products={products}
+              selections={selections}
+              setSelections={setSelections}
+              onGoCart={() => setStep("checkout")}
+              onGoOrders={() => setStep("orders")}
+            />
             <div className="max-w-md mx-auto px-4">
-              <button onClick={addAllToCart} className="w-full mt-2 py-3 rounded-2xl font-semibold" style={{ background: BRAND_YELLOW, color: "#111" }}>{tt.addAll}</button>
-              {cart.length>0 && (<button onClick={()=> setStep("checkout")} className="w-full mt-2 py-3 rounded-2xl font-semibold text-white" style={{ background: BRAND_RED }}>{tdict[lang].gotoCart}</button>)}
+              <button
+                onClick={addAllToCart}
+                className="w-full mt-2 py-3 rounded-2xl font-semibold"
+                style={{ background: BRAND_YELLOW, color: "#111" }}
+              >
+                {tt.addAll}
+              </button>
+              {cart.length > 0 && (
+                <button
+                  onClick={() => setStep("checkout")}
+                  className="w-full mt-2 py-3 rounded-2xl font-semibold text-white"
+                  style={{ background: BRAND_RED }}
+                >
+                  {tdict[lang].gotoCart}
+                </button>
+              )}
             </div>
-          </>)
-      )}
+          </>
+        ))}
 
-      {mode === "kiosk" && (<>
-        <Kiosk lang={lang} orders={kOrders} setOrders={setKOrders} flash={flash} setFlash={setFlash} totals={totals} lastNewOrder={lastNewOrder} onSimulate={simulateOrder} view={kioskView} setView={setKioskView} customerDiscounts={customerDiscounts} />
-        {kioskView === "products" && <ProductManagement lang={lang} products={products} setProducts={setProducts} />}
-        {kioskView === "discounts" && <Discounts lang={lang} customerDiscounts={customerDiscounts} setCustomerDiscounts={setCustomerDiscounts} />}
-        {kioskView === "dashboard" && <Dashboard lang={lang} orders={kOrders} customerDiscounts={customerDiscounts} />}
-        <div className="fixed bottom-2 right-3 text-xs opacity-70">{tdict[lang].poweredBy}</div>
-      </>)}
+      {/* KIOSK (behind PIN) */}
+      {mode === "kiosk" &&
+        (vendorAuthed ? (
+          <>
+            <Kiosk
+              lang={lang}
+              orders={kOrders}
+              setOrders={setKOrders}
+              flash={flash}
+              setFlash={setFlash}
+              totals={totals}
+              lastNewOrder={lastNewOrder}
+              onSimulate={simulateOrder}
+              view={kioskView}
+              setView={setKioskView}
+              customerDiscounts={customerDiscounts}
+              onChangePin={() => setShowChangePin(true)}
+              onLogout={() => {
+                setVendorAuthed(false);
+                setMode("customer");
+              }}
+            />
+            {kioskView === "products" && (
+              <ProductManagement lang={lang} products={products} setProducts={setProducts} />
+            )}
+            {kioskView === "discounts" && (
+              <Discounts
+                lang={lang}
+                customerDiscounts={customerDiscounts}
+                setCustomerDiscounts={setCustomerDiscounts}
+              />
+            )}
+            {kioskView === "dashboard" && (
+              <Dashboard lang={lang} orders={kOrders} customerDiscounts={customerDiscounts} />
+            )}
+            <div className="fixed bottom-2 right-3 text-xs opacity-70">
+              {tdict[lang].poweredBy}
+            </div>
+          </>
+        ) : (
+          <VendorLogin
+            lang={lang}
+            onCancel={() => setMode("customer")}
+            onSuccess={() => setVendorAuthed(true)}
+          />
+        ))}
+
+      {showChangePin && (
+        <ChangePinModal
+          lang={lang}
+          onClose={() => setShowChangePin(false)}
+          onSaved={() => setShowChangePin(false)}
+        />
+      )}
     </div>
   );
 }
