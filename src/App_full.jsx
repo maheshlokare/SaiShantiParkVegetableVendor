@@ -311,7 +311,7 @@ function Header({ lang, setLang, onNavigate, active, title, onGoOrders }) {
     clearTimeout(holdRef.current);
     holdRef.current = setTimeout(() => {
       onNavigate && onNavigate("kiosk");
-    }, 10000); // 10 seconds
+    }, 6000); // 6 seconds
   };
   const endHold = () => clearTimeout(holdRef.current);
 
