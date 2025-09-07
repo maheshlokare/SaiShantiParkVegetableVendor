@@ -1,4 +1,3 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
 // --- FULL CODE pasted from your latest canvas document (identical to previous message) ---
 // To keep the notebook concise, the actual content is exactly the same as you posted.
 // I’m embedding it here 1:1:
