@@ -1,0 +1,28 @@
+{
+  "name": "devansh-veggie-capacitor7-prepkg",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "android:init": "npx cap init \"Devansh Veggie\" com.devansh.veggie --web-dir=dist",
+    "android:add": "npx cap add android",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:copy": "npx cap copy android",
+    "android:prebuild": "npm run build && npm run android:init || true && npm run android:add || true && npm run android:sync"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@capacitor/core": "^7.4.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^5.3.0",
+    "@capacitor/cli": "^7.4.3",
+    "@capacitor/android": "^7.4.3"
+  }
+}
