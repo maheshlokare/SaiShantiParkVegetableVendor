@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -15,10 +16,11 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      # <-- Use Java 21 so "source release: 21" compiles
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
@@ -44,7 +46,6 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
