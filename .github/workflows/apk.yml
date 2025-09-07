@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
+          npm install
           npm i -D @capacitor/cli
           npm i @capacitor/core @capacitor/android
 
