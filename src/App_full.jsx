@@ -1,17 +1,42 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 
-/* =========================
-   Devansh Overseas LLP App (Customer + Vendor Kiosk)
-   MVP – final handoff
-   - Kiosk hidden behind long-press (10s) on brand → PIN login (default 1234)
-   - Big alarm, vibration, and TTS on new orders
-   - English / Marathi / Hindi
-   - Societies: Sai Shanti Park, Aeroplise Phase 1, Aeropoise Phase 2
-   - Customer: multi-add with 0.1 kg steps, cart edit/remove, COD, today/tomorrow
-   - Vendor Kiosk: orders + status, archive, products mgmt, discounts, dashboard
-   - Persistence: products, discounts, kiosk orders in localStorage
-========================= */
+// --- Firebase (Realtime: one kiosk sees ALL orders) ---
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  onSnapshot,
+  serverTimestamp,
+  query,
+  orderBy,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
 
+// 🔁 REPLACE THESE with your Firebase project config (Console → Project settings → Your apps → Web)
+const firebaseConfig = {
+  apiKey: "AIzaSyBNP267y8Nu8sMNod-XePen7L-iTPU_Ca0",
+  authDomain: "devansh-veggie.firebaseapp.com",
+  projectId: "devansh-veggie",
+  storageBucket: "devansh-veggie.firebasestorage.app",
+  messagingSenderId: "90314469787",
+  appId: "1:90314469787:web:5c4499525e9429cfd2713e",
+};
+
+// Initialize once (safe even if hot-reloaded)
+let _app;
+try {
+  _app = initializeApp(firebaseConfig);
+} catch (e) {
+  /* already initialized */
+}
+const db = getFirestore();
+
+// All customers will write to this vendor bucket; kiosk subscribes here
+const VENDOR_ID = "DevanshOverseasLLP"; // ← change if you want a different shared bucket id
+
+// ----------------- THEME -----------------
 const BRAND_RED = "#D32F2F";
 const BRAND_YELLOW = "#FFC107";
 const STATUS_COLORS = {
@@ -303,7 +328,6 @@ function ProductThumb({ img }) {
 /* -------- Header (Kiosk hidden, long-press 10s on brand) -------- */
 function Header({ lang, setLang, onNavigate, active, title, onGoOrders }) {
   const BRAND_NAME = "Devansh Overseas LLP";
-  useTranslate(lang); // just to force re-render on lang change for labels
 
   const holdRef = useRef(null);
   const startHold = (e) => {
@@ -311,7 +335,7 @@ function Header({ lang, setLang, onNavigate, active, title, onGoOrders }) {
     clearTimeout(holdRef.current);
     holdRef.current = setTimeout(() => {
       onNavigate && onNavigate("kiosk");
-    }, 6000); // 6 seconds
+    }, 10000); // 10 seconds
   };
   const endHold = () => clearTimeout(holdRef.current);
 
@@ -514,7 +538,7 @@ function ProductListMultiAdd({
               <div>
                 <div className="font-semibold">{name(v)}</div>
                 <div className="text-xs text-gray-500">
-                  {tt.category}: {v.category || "Other"}
+                  {tdict[lang].category}: {v.category || "Other"}
                 </div>
                 <div className="text-sm text-gray-600">
                   ₹{v.price}/{tdict[lang].kg}{" "}
@@ -627,7 +651,7 @@ function CartCheckout({
                 <div className="text-xs text-gray-500">
                   ₹{l.price.toFixed(2)}/{tdict[lang].kg}
                 </div>
-                {l.productDiscount || l.customerDiscount ? (
+                {(l.productDiscount || l.customerDiscount) && (
                   <div className="text-xs text-green-700 mt-1">
                     {tt.discount}:{" "}
                     {l.productDiscount ? `-${l.productDiscount}% ` : ""}
@@ -637,7 +661,7 @@ function CartCheckout({
                         }`
                       : ""}
                   </div>
-                ) : null}
+                )}
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-2 justify-end">
@@ -777,7 +801,7 @@ function playAlarm() {
   if (navigator?.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
 }
 
-/* -------- Vendor Kiosk (orders panel only; other panels rendered outside) -------- */
+/* -------- Vendor Kiosk -------- */
 function Kiosk({
   lang,
   orders,
@@ -810,15 +834,35 @@ function Kiosk({
 
   const [tab, setTab] = useState("today");
   const [selected, setSelected] = useState(null);
+
+  // Real-time Firestore feed: this kiosk sees ALL customer orders
+  useEffect(() => {
+    try {
+      const q = query(
+        collection(db, "vendors", VENDOR_ID, "orders"),
+        orderBy("createdAt", "desc")
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const arr = [];
+        snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+        setOrders(arr);
+      });
+      return () => unsub();
+    } catch (e) {
+      console.warn("Firestore onSnapshot skipped:", e?.message);
+    }
+  }, [setOrders]);
+
   const filtered = orders.filter((o) =>
     o.when === (tab === "today" ? "today" : tab === "tomorrow" ? "tomorrow" : "archived")
   );
   const archivedTotal = useMemo(
-    () => orders.filter((o) => o.when === "archived").reduce((s, o) => s + o.total, 0),
+    () => orders.filter((o) => o.when === "archived").reduce((s, o) => s + (o.total || 0), 0),
     [orders]
   );
 
-  const updateStatus = (id, status) => {
+  const updateStatus = async (id, status) => {
+    // local instant update
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id !== id) return o;
@@ -828,18 +872,27 @@ function Kiosk({
       })
     );
     setSelected((s) => (s ? { ...s, status, when: status === "delivered" ? "archived" : s.when } : s));
+
+    // remote update (Firestore)
+    try {
+      const ref = doc(db, "vendors", VENDOR_ID, "orders", id.toString());
+      await updateDoc(ref, {
+        status,
+        ...(status === "delivered" ? { when: "archived" } : {}),
+      });
+    } catch (e) {
+      console.warn("Firestore updateDoc skipped:", e?.message);
+    }
   };
 
   return (
     <div className="p-4">
       <div
-        className="rounded-2xl p-4 flex items-center justify-between shadow"
+        className="rounded-2xl p-4 flex items-center justify-between shadow flex-wrap gap-2"
         style={{ background: BRAND_YELLOW }}
       >
-        <div className="text-lg font-bold">
-          {tt.ordersToday}: {totals.ordersToday}
-        </div>
-        <div className="text-lg font-bold">₹{tt.salesToday}: ₹{totals.salesToday.toFixed(2)}</div>
+        <div className="text-lg font-bold">{tt.ordersToday}: {totals.ordersToday}</div>
+        <div className="text-lg font-bold">{tt.salesToday}: ₹{totals.salesToday.toFixed(2)}</div>
         <div className="flex items-center gap-2">
           <button onClick={onSimulate} className="px-2 py-1 rounded bg-white text-black text-xs">
             {tt.simulate}
@@ -944,7 +997,7 @@ function Kiosk({
                     <StatusBadge status={o.status} />
                   </div>
                   <div className="mt-1 space-y-1">
-                    {o.items.map((i, idx) => (
+                    {(o.items || []).map((i, idx) => (
                       <div key={idx} className="text-lg font-semibold">
                         • {i.name} — {i.qty} {i.unit}{" "}
                         {(i.pdisc || i.cdisc) && (
@@ -955,7 +1008,7 @@ function Kiosk({
                       </div>
                     ))}
                   </div>
-                  <div className="mt-2 text-lg font-bold">₹{o.total.toFixed(2)}</div>
+                  <div className="mt-2 text-lg font-bold">₹{(o.total || 0).toFixed(2)}</div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {orderStages.map((s) => (
                       <span
@@ -1006,15 +1059,13 @@ function Kiosk({
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl p-4 w-full max-w-md">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xl font-bold">
-                    #{selected.id} — Apt {selected.apt}
-                  </div>
+                  <div className="text-xl font-bold">#{selected.orderNum || selected.id} — Apt {selected.apt}</div>
                   <StatusBadge status={selected.status} />
                 </div>
                 <div className="text-sm text-gray-600">
-                  {selected.items.map((i) => `${i.name} ${i.qty}${i.unit}`).join(", ")}
+                  {(selected.items || []).map((i) => `${i.name} ${i.qty}${i.unit}`).join(", ")}
                 </div>
-                <div className="mt-2 font-semibold">₹{selected.total.toFixed(2)}</div>
+                <div className="mt-2 font-semibold">₹{(selected.total || 0).toFixed(2)}</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {orderStages.map((s) => (
                     <button
@@ -1409,13 +1460,13 @@ function Dashboard({ lang, orders, customerDiscounts }) {
   const { tt } = useTranslate(lang);
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayOrders = orders.filter((o) => o.createdDay === todayStr);
-  const revenue = todayOrders.reduce((s, o) => s + o.total, 0);
+  const revenue = todayOrders.reduce((s, o) => s + (o.total || 0), 0);
   const count = todayOrders.length;
   const byApt = {};
   const byProd = {};
   todayOrders.forEach((o) => {
-    byApt[o.apt] = (byApt[o.apt] || 0) + o.total;
-    o.items.forEach((it) => {
+    byApt[o.apt] = (byApt[o.apt] || 0) + (o.total || 0);
+    (o.items || []).forEach((it) => {
       byProd[it.name] = (byProd[it.name] || 0) + it.qty;
     });
   });
@@ -1466,7 +1517,7 @@ function Dashboard({ lang, orders, customerDiscounts }) {
   );
 }
 
-/* -------- Customer Orders (shows status from kiosk) -------- */
+/* -------- Customer Orders (local status only) -------- */
 function MyOrders({ lang, orders, kOrders, onBack }) {
   const { tt } = useTranslate(lang);
   if (!orders.length)
@@ -1483,7 +1534,7 @@ function MyOrders({ lang, orders, kOrders, onBack }) {
     );
   return (
     <div className="p-4 max-w-md mx-auto">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify_between mb-2">
         <h2 className="text-xl font-bold">{tt.myOrders}</h2>
         <button onClick={onBack} className="underline">
           ← {tt.back}
@@ -1491,7 +1542,7 @@ function MyOrders({ lang, orders, kOrders, onBack }) {
       </div>
       <div className="space-y-2">
         {orders.map((o) => {
-          const kiosk = kOrders.find((ko) => ko.id === o.id);
+          const kiosk = kOrders.find((ko) => ko.orderNum === o.id || ko.id === o.id);
           const st = kiosk?.status || o.status || "new";
           return (
             <div
@@ -1618,6 +1669,7 @@ export default function App() {
   const [kOrders, setKOrders] = useState([
     {
       id: 1234,
+      orderNum: 1234,
       apt: "3B",
       items: [{ name: "Potato", qty: 2, unit: "kg", price: 20 }],
       status: "accepted",
@@ -1640,7 +1692,7 @@ export default function App() {
   const totals = useMemo(() => {
     const todayOrders = kOrders.filter((o) => o.createdDay === todayStr);
     const ordersToday = todayOrders.length;
-    const salesToday = todayOrders.reduce((s, o) => s + o.total, 0);
+    const salesToday = todayOrders.reduce((s, o) => s + (o.total || 0), 0);
     return { ordersToday, salesToday };
   }, [kOrders, todayStr]);
 
@@ -1684,40 +1736,80 @@ export default function App() {
     setSelections({});
   };
 
-  const placeOrder = ({ delivery, totalCalculated, lines }) => {
+  const placeOrder = async ({ delivery, totalCalculated, lines }) => {
     const id = Math.floor(1000 + Math.random() * 9000);
     setOrderId(id);
+
+    // customer-facing local confirmation
     const newOrderCust = { id, items: lines.map((l) => ({ ...l })), status: "new" };
     setOrders((prev) => [newOrderCust, ...prev]);
 
+    // send to kiosk collection in Firestore
     const apt = profile?.apt || "3B";
-    const kioskOrder = {
-      id,
+    const payload = {
       apt,
-      items: lines.map((l) => ({ name: l.name, qty: l.qty, unit: "kg", price: l.price, pdisc: l.productDiscount, cdisc: l.customerDiscount })),
+      items: lines.map((l) => ({
+        name: l.name,
+        qty: l.qty,
+        unit: "kg",
+        price: l.price,
+        pdisc: l.productDiscount,
+        cdisc: l.customerDiscount,
+      })),
       status: "new",
       when: delivery === "tomorrow" ? "tomorrow" : "today",
       total: totalCalculated,
       createdDay: todayStr,
+      createdAt: serverTimestamp(),
+      society: profile?.society || "",
+      orderNum: id,
     };
-    setKOrders((prev) => [kioskOrder, ...prev]);
+
+    try {
+      await addDoc(collection(db, "vendors", VENDOR_ID, "orders"), payload);
+    } catch (e) {
+      console.warn("Firestore addDoc skipped:", e?.message);
+    }
+
+    // local mirror (for same-device testing)
+    setKOrders((prev) => [
+      { id, orderNum: id, apt, items: payload.items, status: payload.status, when: payload.when, total: payload.total, createdDay: payload.createdDay },
+      ...prev,
+    ]);
     setLastNewOrder({ id, apt });
     setCart([]);
   };
 
-  const simulateOrder = () => {
-    const id = Math.floor(1000 + Math.random() * 9000);
-    const kioskOrder = {
-      id,
-      apt: "4A",
-      items: [{ name: "Potato", qty: 2, unit: "kg", price: 20 }],
-      status: "new",
-      when: "today",
-      total: 40,
-      createdDay: todayStr,
-    };
-    setKOrders((prev) => [kioskOrder, ...prev]);
-    setLastNewOrder({ id, apt: "4A" });
+  const simulateOrder = async () => {
+    // Create a fake order DIRECTLY in Firestore so the kiosk subscription sees it
+    try {
+      await addDoc(collection(db, "vendors", VENDOR_ID, "orders"), {
+        apt: "4A",
+        items: [{ name: "Potato", qty: 2, unit: "kg", price: 20 }],
+        status: "new",
+        when: "today",
+        total: 40,
+        createdDay: todayStr,
+        createdAt: serverTimestamp(),
+        society: "",
+        orderNum: Math.floor(1000 + Math.random() * 9000),
+      });
+    } catch (e) {
+      // fall back to local
+      const id = Math.floor(1000 + Math.random() * 9000);
+      const kioskOrder = {
+        id,
+        orderNum: id,
+        apt: "4A",
+        items: [{ name: "Potato", qty: 2, unit: "kg", price: 20 }],
+        status: "new",
+        when: "today",
+        total: 40,
+        createdDay: todayStr,
+      };
+      setKOrders((prev) => [kioskOrder, ...prev]);
+      setLastNewOrder({ id, apt: "4A" });
+    }
   };
 
   return (
