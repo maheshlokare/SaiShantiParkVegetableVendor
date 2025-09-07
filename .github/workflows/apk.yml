@@ -32,16 +32,19 @@ jobs:
       - name: Build web
         run: npm run build
 
-      - name: Add/Sync Android (creates /android if missing)
+      - name: Add/Sync Android (fresh)
         run: |
+          rm -rf android
           npx cap init "Devansh Veggie" com.devansh.veggie --web-dir=dist || true
-          npx cap add android || true
+          npx cap add android
           npx cap sync android
 
       - name: Build APK (debug)
         run: |
           cd android
-          ./gradlew assembleDebug
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
