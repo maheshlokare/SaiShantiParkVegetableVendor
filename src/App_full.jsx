@@ -606,11 +606,11 @@ function CartCheckout({ lang, cart, setCart, onPlace, onBack, products, customer
               <div>
                 <div className="font-semibold">{l.name}</div>
                 <div className="text-xs text-gray-500">₹{l.price.toFixed(2)}/{tdict[lang].kg}</div>
-                {(l.productDiscount || l.customerDiscount) && (
-                  <div className="text-xs text-green-700 mt-1">
-                    {tt.discount}:{" "}
-                    {l.productDiscount ? `-${l.productDiscount}% ` : ""}
-                    {l.customerDiscount ? `- ${l.customerDiscount}% ${custName ? `(${custName})` : `(apt ${apt})`}` : ""}
+                {(((l.productDiscount ?? 0) > 0) || ((l.customerDiscount ?? 0) > 0)) && (
+                   <div className="text-xs text-green-700 mt-1">
+                   {tt.discount}:{" "}
+                   {((l.productDiscount ?? 0) > 0) ? `-${l.productDiscount}% ` : ""}
+                   {((l.customerDiscount ?? 0) > 0) ? `- ${l.customerDiscount}% ${custName ? `(${custName})` : `(apt ${apt})`}` : ""}
                   </div>
                 )}
               </div>
@@ -821,9 +821,14 @@ function Kiosk({
                     {(o.items || []).map((i, idx) => (
                       <div key={idx} className="text-lg font-semibold">
                         • {i.name} — {i.qty} {i.unit}{" "}
-                        {(i.pdisc || i.cdisc) && (
-                          <span className="text-xs text-green-700 ml-2">(-{i.pdisc || 0}%{i.cdisc ? `, -${i.cdisc}%` : ""})</span>
-                        )}
+                        {(((i.pdisc ?? 0) > 0) || ((i.cdisc ?? 0) > 0)) && (
+                        <span className="text-xs text-green-700 ml-2">
+                      ({[
+                          ((i.pdisc ?? 0) > 0) ? `-${i.pdisc}%` : null,
+                          ((i.cdisc ?? 0) > 0) ? `-${i.cdisc}%` : null,
+                          ].filter(Boolean).join(", ")})
+                      </span>
+                      )}
                       </div>
                     ))}
                   </div>
