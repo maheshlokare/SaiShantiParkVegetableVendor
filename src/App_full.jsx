@@ -132,6 +132,7 @@ const tdict = {
     changePin: "Change PIN",
     savePin: "Save PIN",
     logout: "Logout",
+    aptDiscBanner: (p, who) => `Apartment discount active: -${p}% ${who ? `for ${who}` : ""}`,
   },
   mr: {
     appTitle: "Devansh Overseas LLP",
@@ -210,6 +211,7 @@ const tdict = {
     changePin: "PIN बदला",
     savePin: "PIN सेव्ह करा",
     logout: "लॉगआऊट",
+    aptDiscBanner: (p, who) => `अपार्टमेंट सवलत सक्रिय: -${p}% ${who ? `(${who})` : ""}`,
   },
   hi: {
     appTitle: "Devansh Overseas LLP",
@@ -263,7 +265,7 @@ const tdict = {
     imageURL: "इमेज URL",
     upload: "अपलोड",
     discount: "छूट",
-    status: "स्टेटस",
+    status: "স্টেটस",
     archiveTotal: "आर्काइव कुल",
     simulate: "नया ऑर्डर दिखाएँ",
     next: "आगे",
@@ -288,6 +290,7 @@ const tdict = {
     changePin: "PIN बदलें",
     savePin: "PIN सेव करें",
     logout: "लॉगआउट",
+    aptDiscBanner: (p, who) => `अपार्टमेंट डिस्काउंट सक्रिय: -${p}% ${who ? `(${who})` : ""}`,
   },
 };
 
@@ -304,7 +307,7 @@ const PRODUCT_LIBRARY = {
 };
 
 const defaultProducts = [
-  { id: "potato", name: { en: "Potato", mr: "બટાટા", hi: "आलू" }, price: 20, unit: "kg", img: PRODUCT_LIBRARY.potato.img, available: true, discountPct: 0, category: PRODUCT_LIBRARY.potato.category },
+  { id: "potato", name: { en: "Potato", mr: "बटाटा", hi: "आलू" }, price: 20, unit: "kg", img: PRODUCT_LIBRARY.potato.img, available: true, discountPct: 0, category: PRODUCT_LIBRARY.potato.category },
   { id: "tomato", name: { en: "Tomato", mr: "टोमॅटो", hi: "टमाटर" }, price: 25, unit: "kg", img: PRODUCT_LIBRARY.tomato.img, available: true, discountPct: 0, category: PRODUCT_LIBRARY.tomato.category },
   { id: "onion",  name: { en: "Onion",  mr: "कांदा",  hi: "प्याज़" },  price: 18, unit: "kg", img: PRODUCT_LIBRARY.onion.img, available: true, discountPct: 0, category: PRODUCT_LIBRARY.onion.category },
   { id: "cucumber",  name: { en: "Cucumber",  mr: "काकडी",  hi: "खीरा" },  price: 32, unit: "kg", img: PRODUCT_LIBRARY.cucumber.img, available: true, discountPct: 0, category: PRODUCT_LIBRARY.cucumber.category },
@@ -323,6 +326,21 @@ function ProductThumb({ img }) {
   return <div className="text-3xl">{img || "🛒"}</div>;
 }
 
+/* ===== Apartment Discount Banner ===== */
+function DiscountBanner({ lang, profile, customerDiscounts }) {
+  const { tt } = useTranslate(lang);
+  const apt = profile?.apt?.trim();
+  const entry = apt ? customerDiscounts?.[apt] : null;
+  const pct = typeof entry === "object" ? Number(entry?.pct || 0) : Number(entry || 0);
+  const nm = typeof entry === "object" ? (entry?.name || "") : "";
+  if (!(pct > 0)) return null;
+  return (
+    <div className="rounded-xl px-3 py-2 mb-3 text-sm font-semibold" style={{ background: "#DCFCE7", color: "#065F46" }}>
+      {tt.aptDiscBanner(pct, nm || (apt ? `Apt ${apt}` : ""))}
+    </div>
+  );
+}
+
 /* -------- Header (Kiosk hidden, long-press 10s on brand) -------- */
 function Header({ lang, setLang, onNavigate, active, title, onGoOrders }) {
   const BRAND_NAME = "Devansh Overseas LLP";
@@ -333,7 +351,7 @@ function Header({ lang, setLang, onNavigate, active, title, onGoOrders }) {
     clearTimeout(holdRef.current);
     holdRef.current = setTimeout(() => {
       onNavigate && onNavigate("kiosk");
-    }, 10000); // 10 seconds
+    }, 5000); // 5 seconds
   };
   const endHold = () => clearTimeout(holdRef.current);
 
@@ -485,6 +503,8 @@ function ProductListMultiAdd({
   selections,
   onGoCart,
   onGoOrders,
+  profile,
+  customerDiscounts,
 }) {
   const { tt, name } = useTranslate(lang);
   const [catFilter, setCatFilter] = useState("All");
@@ -496,6 +516,8 @@ function ProductListMultiAdd({
 
   return (
     <div className="p-4 max-w-md mx-auto">
+      <DiscountBanner lang={lang} profile={profile} customerDiscounts={customerDiscounts} />
+
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-xl font-bold">{tt.products}</h2>
         <div className="flex gap-2">
@@ -535,7 +557,7 @@ function ProductListMultiAdd({
                 </div>
                 <div className="text-sm text-gray-600">
                   ₹{v.price}/{tdict[lang].kg}{" "}
-                  {v.discountPct ? (
+                  {((v.discountPct ?? 0) > 0) ? (
                     <span className="ml-1 text-green-700 font-semibold">(-{v.discountPct}%)</span>
                   ) : null}
                 </div>
@@ -599,6 +621,9 @@ function CartCheckout({ lang, cart, setCart, onPlace, onBack, products, customer
         <h2 className="text-xl font-bold">{tt.checkout}</h2>
         <button onClick={onBack} className="underline">← {tt.back}</button>
       </div>
+
+      <DiscountBanner lang={lang} profile={profile} customerDiscounts={customerDiscounts} />
+
       <div className="space-y-2">
         {lines.map((l, i) => (
           <div key={i} className="border rounded-xl p-3 bg-white">
@@ -607,10 +632,10 @@ function CartCheckout({ lang, cart, setCart, onPlace, onBack, products, customer
                 <div className="font-semibold">{l.name}</div>
                 <div className="text-xs text-gray-500">₹{l.price.toFixed(2)}/{tdict[lang].kg}</div>
                 {(((l.productDiscount ?? 0) > 0) || ((l.customerDiscount ?? 0) > 0)) && (
-                   <div className="text-xs text-green-700 mt-1">
-                   {tt.discount}:{" "}
-                   {((l.productDiscount ?? 0) > 0) ? `-${l.productDiscount}% ` : ""}
-                   {((l.customerDiscount ?? 0) > 0) ? `- ${l.customerDiscount}% ${custName ? `(${custName})` : `(apt ${apt})`}` : ""}
+                  <div className="text-xs text-green-700 mt-1">
+                    {tt.discount}:{" "}
+                    {((l.productDiscount ?? 0) > 0) ? `-${l.productDiscount}% ` : ""}
+                    {((l.customerDiscount ?? 0) > 0) ? `- ${l.customerDiscount}% ${custName ? `(${custName})` : `(apt ${apt})`}` : ""}
                   </div>
                 )}
               </div>
@@ -774,7 +799,7 @@ function Kiosk({
         <div className="text-lg font-bold">{tt.ordersToday}: {totals.ordersToday}</div>
         <div className="text-lg font-bold">{tt.salesToday}: ₹{totals.salesToday.toFixed(2)}</div>
         <div className="flex items-center gap-2">
-          <button onClick={onSimulate} className="px-2 py-1 rounded bg-white text-black text-xs">{tt.simulate}</button>
+          <button onClick={onSimulate} className="px-2 py-1 rounded bg.white text-black text-xs">{tt.simulate}</button>
           <button onClick={onChangePin} className="px-2 py-1 rounded bg-white text-black text-xs">{tt.changePin}</button>
           <button onClick={onLogout} className="px-2 py-1 rounded bg-white text-black text-xs">{tt.logout}</button>
         </div>
@@ -822,13 +847,13 @@ function Kiosk({
                       <div key={idx} className="text-lg font-semibold">
                         • {i.name} — {i.qty} {i.unit}{" "}
                         {(((i.pdisc ?? 0) > 0) || ((i.cdisc ?? 0) > 0)) && (
-                        <span className="text-xs text-green-700 ml-2">
-                      ({[
-                          ((i.pdisc ?? 0) > 0) ? `-${i.pdisc}%` : null,
-                          ((i.cdisc ?? 0) > 0) ? `-${i.cdisc}%` : null,
-                          ].filter(Boolean).join(", ")})
-                      </span>
-                      )}
+                          <span className="text-xs text-green-700 ml-2">
+                            ({[
+                              ((i.pdisc ?? 0) > 0) ? `-${i.pdisc}%` : null,
+                              ((i.cdisc ?? 0) > 0) ? `-${i.cdisc}%` : null,
+                            ].filter(Boolean).join(", ")})
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -852,7 +877,7 @@ function Kiosk({
 
           {selected && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl p-4 w-full max-w-md">
+              <div className="bg-white rounded-2xl p-4 w.full max-w-md">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xl font-bold">#{selected.orderNum || selected.id} — Apt {selected.apt}</div>
                   <StatusBadge status={selected.status} />
@@ -1108,7 +1133,7 @@ function Discounts({ lang, customerDiscounts, setCustomerDiscounts }) {
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ramesh" className="border rounded px-2 py-2 w-full" />
           </div>
           <div className="w-40">
-            <label className="text-xs">{tt.customerDiscount}</label>
+            <label className="text-xs">{tdict[lang].customerDiscount}</label>
             <input value={pct} onChange={(e) => setPct(e.target.value)} placeholder="5" className="border rounded px-2 py-2 w-full" />
           </div>
           <button onClick={add} className="px-4 py-2 rounded-2xl text-white" style={{ background: BRAND_RED }}>{tt.addDiscount}</button>
@@ -1424,7 +1449,7 @@ export default function App() {
           <MyOrders lang={lang} orders={orders} kOrders={kOrders} live={custLive} onBack={() => setStep("products")} />
         ) : (
           <>
-            <ProductListMultiAdd lang={lang} products={products} selections={selections} setSelections={setSelections} onGoCart={() => setStep("checkout")} onGoOrders={() => setStep("orders")} />
+            <ProductListMultiAdd lang={lang} products={products} selections={selections} setSelections={setSelections} onGoCart={() => setStep("checkout")} onGoOrders={() => setStep("orders")} profile={profile} customerDiscounts={customerDiscounts} />
             <div className="max-w-md mx-auto px-4">
               <button onClick={addAllToCart} className="w-full mt-2 py-3 rounded-2xl font-semibold" style={{ background: BRAND_YELLOW, color: "#111" }}>{tt.addAll}</button>
               {cart.length > 0 && (
